@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blindtest Likés</title>
+<style>
+  :root {
+    --bg: #0f0f12; --card: #1a1a20; --line: #2c2c35; --text: #f2f2f5; --muted: #9a9aa8;
+    --accent: #1ed760; --ok: #1ed760; --mid: #f5b941; --ko: #ef5350;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  h2 { font-size: 20px; margin: 0 0 16px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
+  .hidden { display: none !important; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
+  input, select { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: #111116; color: var(--text); font: inherit; }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  button { font: inherit; font-weight: 600; padding: 10px 18px; border-radius: 999px; border: 0; cursor: pointer; background: var(--accent); color: #000; }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+  code { background: #111116; padding: 2px 6px; border-radius: 4px; font-size: 14px; word-break: break-all; }
+  ol { padding-left: 20px; } ol li { margin-bottom: 6px; }
+  .status { color: var(--muted); font-size: 14px; margin-top: 8px; }
+  .error { color: var(--ko); }
+  .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; color: var(--muted); }
+  .topbar strong { color: var(--text); }
+  .eq { display: flex; gap: 4px; height: 32px; align-items: flex-end; margin: 4px 0 8px; }
+  .eq span { width: 6px; background: var(--accent); border-radius: 3px; animation: eq 1s infinite ease-in-out; }
+  .eq span:nth-child(2) { animation-delay: .2s } .eq span:nth-child(3) { animation-delay: .4s } .eq span:nth-child(4) { animation-delay: .1s } .eq span:nth-child(5) { animation-delay: .3s }
+  .eq.paused span { animation-play-state: paused; opacity: .4; }
+  @keyframes eq { 0%,100% { height: 20% } 50% { height: 100% } }
+  .reveal { display: flex; gap: 16px; align-items: center; margin-bottom: 12px; }
+  .reveal img { width: 96px; height: 96px; border-radius: 8px; object-fit: cover; flex-shrink: 0; }
+  .answers { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .answers td { padding: 6px 4px; border-top: 1px solid var(--line); vertical-align: top; }
+  .answers td:first-child { color: var(--muted); width: 28%; }
+  .pts { font-weight: 700; text-align: right; white-space: nowrap; }
+  .pts.ok { color: var(--ok); } .pts.mid { color: var(--mid); } .pts.ko { color: var(--ko); }
+  .guess { color: var(--muted); font-size: 13px; }
+  .big { font-size: 48px; font-weight: 800; margin: 0; }
+  .recap { list-style: none; padding: 0; margin: 0; }
+  .recap li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .recap li span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vol { display: flex; align-items: center; gap: 8px; margin: 0 0 0 auto; font-size: 13px; }
+  .vol input { width: 110px; padding: 0; border: 0; background: none; accent-color: var(--accent); }
+  @media (max-width: 480px) { .row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Blindtest Likés</h1>
+  <p class="sub">Tes titres likés Spotify, à l'aveugle.</p>
+
+  <section id="screen-login" class="card hidden">
+    <h2>Connexion</h2>
+    <div id="login-setup">
+      <ol>
+        <li>Crée une app sur <code>developer.spotify.com/dashboard</code> (API : <em>Web API</em> + <em>Web Playback SDK</em>).</li>
+        <li>Ajoute ce Redirect URI exact : <code id="redirect-uri"></code></li>
+        <li>Colle le <strong>Client ID</strong> ci-dessous.</li>
+      </ol>
+      <label for="client-id">Client ID</label>
+      <input id="client-id" autocomplete="off" spellcheck="false">
+    </div>
+    <p id="login-hint" class="status hidden">Il faut un compte Spotify Premium, ajouté à l'app par l'organisateur. À ouvrir dans Chrome ou Edge sur ordinateur.</p>
+    <div class="actions"><button id="btn-login">Se connecter à Spotify</button></div>
+    <p id="login-error" class="status error"></p>
+  </section>
+
+  <section id="screen-setup" class="card hidden">
+    <h2>Préparer la partie</h2>
+    <p id="liked-status" class="status">Chargement des titres likés…</p>
+    <p id="player-status" class="status">Initialisation du lecteur…</p>
+    <div class="row">
+      <div>
+        <label for="opt-count">Nombre de titres</label>
+        <input id="opt-count" type="number" min="1" value="10">
+      </div>
+      <div>
+        <label for="opt-snippet">Durée d'écoute</label>
+        <select id="opt-snippet">
+          <option value="10">10 s</option>
+          <option value="20" selected>20 s</option>
+          <option value="30">30 s</option>
+          <option value="0">Illimitée</option>
+        </select>
+      </div>
+    </div>
+    <label for="opt-start">Début de l'extrait</label>
+    <select id="opt-start">
+      <option value="random" selected>Au hasard dans le morceau</option>
+      <option value="begin">Début du morceau</option>
+    </select>
+    <div class="actions">
+      <button id="btn-start" disabled>Lancer le blindtest</button>
+      <button id="btn-reload" class="ghost">Recharger les likés</button>
+      <button id="btn-logout" class="ghost">Déconnexion</button>
+    </div>
+  </section>
+
+  <section id="screen-round" class="hidden">
+    <div class="topbar">
+      <span>Titre <strong id="round-num"></strong></span>
+      <span>Score <strong id="round-score"></strong></span>
+    </div>
+    <div class="card">
+      <div id="eq" class="eq paused"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="actions" style="margin-top:0">
+        <button id="btn-replay" class="ghost" type="button">Réécouter</button>
+        <button id="btn-pause" class="ghost" type="button">Pause</button>
+        <button id="btn-skip" class="ghost" type="button" title="Titre illisible ou déjà vu : on le remplace">Passer</button>
+        <label class="vol">Volume <input id="volume" type="range" min="0" max="100" step="5"></label>
+      </div>
+      <p id="round-loading" class="status hidden">Chargement du son…</p>
+      <p id="round-error" class="status error"></p>
+      <form id="guess-form" autocomplete="off">
+        <div class="row">
+          <div><label for="g-artist" id="label-artist">Artiste</label><input id="g-artist"></div>
+          <div><label for="g-title">Titre</label><input id="g-title"></div>
+        </div>
+        <label for="g-album">Album</label><input id="g-album">
+        <div class="row">
+          <div><label for="g-year">Année de sortie</label><input id="g-year" inputmode="numeric" maxlength="4"></div>
+          <div><label for="g-added">Année où tu l'as liké</label><input id="g-added" inputmode="numeric" maxlength="4"></div>
+        </div>
+        <div class="actions"><button type="submit">Valider</button></div>
+      </form>
+      <div id="result" class="hidden">
+        <div class="reveal">
+          <img id="r-cover" alt="">
+          <div><p class="big" id="r-points"></p><span class="status">sur 50</span></div>
+        </div>
+        <table class="answers"><tbody id="r-table"></tbody></table>
+        <div class="actions"><button id="btn-next" type="button">Suivant</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="screen-end" class="card hidden">
+    <h2>Fini !</h2>
+    <p class="big" id="end-score"></p>
+    <p class="status" id="end-detail"></p>
+    <ul class="recap" id="end-recap"></ul>
+    <div class="actions"><button id="btn-again">Nouvelle partie</button></div>
+  </section>
+</main>
+<script src="config.js"></script>
+<script src="scoring.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
