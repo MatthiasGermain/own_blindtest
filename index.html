@@ -3,66 +3,170 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Blindtest Likés</title>
+<title>Blindtest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Fraunces:opsz,wght,SOFT,WONK@9..144,400..900,0..100,0..1&display=swap">
 <style>
+  /* DA « Disco grain » : noir, crème, orange brûlé ; Fraunces Soft pour l'affichage, DM Mono pour l'interface. */
   :root {
-    --bg: #0f0f12; --card: #1a1a20; --line: #2c2c35; --text: #f2f2f5; --muted: #9a9aa8;
-    --accent: #1ed760; --ok: #1ed760; --mid: #f5b941; --ko: #ef5350;
+    --bg: #0e0d0c;
+    --surface: #1c1a18;
+    --text: #efe6d3;
+    --muted: #8c877d;
+    --accent: #ff6614;
+    --accent-ink: #0e0d0c;
+    --line: rgba(239, 230, 211, .18);
+    --line-strong: rgba(239, 230, 211, .55);
+    --ko: #6d6962;
+    --font-display: "Fraunces", "Cooper Black", Georgia, serif;
+    --font-ui: "DM Mono", ui-monospace, "Cascadia Mono", monospace;
+    --ease-out: cubic-bezier(.22, 1, .36, 1);
+    --spring: cubic-bezier(.34, 1.56, .64, 1);
+    --noise: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .22 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    color-scheme: dark;
   }
+
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { max-width: 640px; margin: 0 auto; padding: 32px 16px 64px; }
-  h1 { font-size: 28px; margin: 0 0 4px; }
-  h2 { font-size: 20px; margin: 0 0 16px; }
-  .sub { color: var(--muted); margin: 0 0 24px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
+  html { background: var(--bg); }
+  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font: 400 14px/1.6 var(--font-ui); }
+  body::before { content: ""; position: fixed; inset: 0; background: var(--noise); background-size: 160px; opacity: .35; pointer-events: none; z-index: 0; }
+  main { position: relative; z-index: 1; max-width: 660px; margin: 0 auto; padding: 40px 16px 72px; }
+
+  .display { font-family: var(--font-display); font-weight: 900; font-variation-settings: "SOFT" 100, "WONK" 1, "opsz" 144; }
+  h1 { font-size: clamp(44px, 10vw, 64px); line-height: .95; letter-spacing: -0.03em; margin: 0; }
+  h2 { font-family: var(--font-display); font-weight: 800; font-variation-settings: "SOFT" 100, "WONK" 1; font-size: 26px; line-height: 1.1; letter-spacing: -0.01em; margin: 0 0 20px; }
+  .sub { margin: 10px 0 32px; color: var(--muted); font-weight: 300; text-transform: uppercase; letter-spacing: .14em; font-size: 12px; }
+
+  .card { background: var(--surface); border: 1px solid var(--line); padding: 24px; margin-bottom: 16px; }
+  .screen { animation: enter .5s var(--ease-out) both; }
+  @keyframes enter { from { opacity: 0; transform: translateY(14px); } }
   .hidden { display: none !important; }
-  label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
-  input, select { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: #111116; color: var(--text); font: inherit; }
-  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  button { font: inherit; font-weight: 600; padding: 10px 18px; border-radius: 999px; border: 0; cursor: pointer; background: var(--accent); color: #000; }
-  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
-  button:disabled { opacity: .4; cursor: not-allowed; }
-  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
-  code { background: #111116; padding: 2px 6px; border-radius: 4px; font-size: 14px; word-break: break-all; }
-  ol { padding-left: 20px; } ol li { margin-bottom: 6px; }
-  .status { color: var(--muted); font-size: 14px; margin-top: 8px; }
-  .error { color: var(--ko); }
-  .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; color: var(--muted); }
-  .topbar strong { color: var(--text); }
-  .eq { display: flex; gap: 4px; height: 32px; align-items: flex-end; margin: 4px 0 8px; }
-  .eq span { width: 6px; background: var(--accent); border-radius: 3px; animation: eq 1s infinite ease-in-out; }
-  .eq span:nth-child(2) { animation-delay: .2s } .eq span:nth-child(3) { animation-delay: .4s } .eq span:nth-child(4) { animation-delay: .1s } .eq span:nth-child(5) { animation-delay: .3s }
-  .eq.paused span { animation-play-state: paused; opacity: .4; }
-  @keyframes eq { 0%,100% { height: 20% } 50% { height: 100% } }
-  .reveal { display: flex; gap: 16px; align-items: center; margin-bottom: 12px; }
-  .reveal img { width: 96px; height: 96px; border-radius: 8px; object-fit: cover; flex-shrink: 0; }
-  .answers { width: 100%; border-collapse: collapse; font-size: 14px; }
-  .answers td { padding: 6px 4px; border-top: 1px solid var(--line); vertical-align: top; }
-  .answers td:first-child { color: var(--muted); width: 28%; }
-  .pts { font-weight: 700; text-align: right; white-space: nowrap; }
-  .pts.ok { color: var(--ok); } .pts.mid { color: var(--mid); } .pts.ko { color: var(--ko); }
-  .guess { color: var(--muted); font-size: 13px; }
-  .big { font-size: 48px; font-weight: 800; margin: 0; }
-  .recap { list-style: none; padding: 0; margin: 0; }
-  .recap li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
-  .recap li span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .fields { display: flex; flex-wrap: wrap; gap: 8px 16px; }
-  .fields label { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: var(--text); font-size: 14px; cursor: pointer; }
-  .fields label.off { color: var(--muted); cursor: not-allowed; }
-  .fields input { width: auto; accent-color: var(--accent); }
-  .vol { display: flex; align-items: center; gap: 8px; margin: 0 0 0 auto; font-size: 13px; }
-  .vol input { width: 110px; padding: 0; border: 0; background: none; accent-color: var(--accent); }
-  @media (max-width: 480px) { .row { grid-template-columns: 1fr; } }
+
+  label { display: block; font-size: 11px; font-weight: 400; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; margin: 18px 0 6px; }
+  input, select {
+    width: 100%; padding: 11px 12px; border-radius: 0; border: 1px solid var(--line-strong);
+    background: transparent; color: var(--text); font: 400 15px var(--font-ui); transition: border-color .15s, box-shadow .15s;
+  }
+  input::placeholder { color: var(--muted); }
+  select {
+    appearance: none; padding-right: 36px; cursor: pointer;
+    background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><path d='M1 1l5 5 5-5' fill='none' stroke='%23efe6d3' stroke-width='1.5'/></svg>") no-repeat right 14px center;
+  }
+  select option { background: var(--surface); color: var(--text); }
+  input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: end; }
+
+  button {
+    font: 900 16px var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1;
+    padding: 11px 22px; border-radius: 999px; border: 0; cursor: pointer;
+    background: var(--accent); color: var(--accent-ink);
+    transition: transform .15s var(--ease-out), box-shadow .15s var(--ease-out), background .15s;
+    box-shadow: 0 0 0 0 var(--text);
+  }
+  button:hover:not(:disabled) { transform: translate(-2px, -2px); box-shadow: 3px 3px 0 0 var(--text); }
+  button:active:not(:disabled) { transform: none; box-shadow: 0 0 0 0 var(--text); }
+  button:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+  button.ghost {
+    font: 400 12px var(--font-ui); text-transform: uppercase; letter-spacing: .1em;
+    background: transparent; color: var(--text); border: 1px solid var(--line-strong); padding: 10px 16px;
+  }
+  button.ghost:hover:not(:disabled) { border-color: var(--text); box-shadow: 3px 3px 0 0 var(--accent); }
+  button:disabled { opacity: .35; cursor: not-allowed; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 24px; }
+
+  code { font: 400 13px var(--font-ui); border: 1px solid var(--line); padding: 1px 6px; word-break: break-all; }
+  ol { padding-left: 20px; margin: 0 0 8px; } ol li { margin-bottom: 8px; }
+  p { margin: 0 0 12px; }
+  .status { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
+  .error { color: var(--accent); }
+  a { color: var(--accent); }
+
+  .fields { display: flex; flex-wrap: wrap; gap: 8px; }
+  .fields label {
+    position: relative; display: inline-flex; align-items: center; margin: 0; padding: 7px 14px; cursor: pointer;
+    border: 1px solid var(--line-strong); border-radius: 999px; color: var(--text); font-size: 11px;
+    transition: background .15s, color .15s, border-color .15s;
+  }
+  .fields input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+  .fields label:has(input:checked) { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .fields label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .fields label.off { opacity: .4; cursor: not-allowed; background: transparent !important; color: var(--muted) !important; border-color: var(--line) !important; }
+
+  /* ---------- Manche ---------- */
+  .topbar { display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); }
+  .topbar strong { font: 900 22px var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; letter-spacing: 0; color: var(--text); text-transform: none; display: inline-block; margin-left: 6px; font-variant-numeric: tabular-nums; }
+  .bump { animation: bump .5s var(--spring); }
+  @keyframes bump { 40% { transform: scale(1.45); color: var(--accent); } }
+  .progress { height: 2px; background: var(--line); margin: 10px 0 16px; }
+  .progress i { display: block; height: 100%; width: 0; background: var(--text); transition: width .6s var(--ease-out); }
+
+  .stage {
+    position: relative; width: 100%; height: clamp(190px, 44vw, 290px); border: 1px solid var(--line-strong);
+    display: grid; place-items: center; overflow: hidden;
+    background: var(--noise), radial-gradient(120% 130% at 90% 100%, var(--accent) 0%, #8a3106 32%, #2a1408 58%, var(--surface) 85%);
+    background-size: 160px 160px, cover;
+  }
+  .stage.playing { animation: grain .5s steps(3) infinite; }
+  @keyframes grain { 33% { background-position: 40px 20px, 0 0; } 66% { background-position: -30px 50px, 0 0; } }
+  .stage-big { grid-area: 1 / 1; line-height: .9; text-align: center; padding: 0 20px; transition: opacity .35s, transform .6s var(--ease-out); }
+  #stage-num { font-size: clamp(80px, 22vw, 150px); letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
+  #stage-num small { font: 300 16px var(--font-ui); letter-spacing: .06em; opacity: .7; }
+  .stage-title { font-size: clamp(34px, 8vw, 60px); letter-spacing: -0.02em; text-wrap: balance; opacity: 0; transform: translateY(28px); }
+  .stage.revealed #stage-num { opacity: 0; transform: translateY(-28px); }
+  .stage.revealed .stage-title { opacity: 1; transform: none; transition-delay: .1s; }
+  .countdown { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(14, 13, 12, .4); transition: opacity .3s; }
+  .countdown i { display: block; height: 100%; background: var(--text); transform-origin: left; }
+  .countdown.run i { animation: drain var(--dur, 20s) linear forwards; }
+  .countdown.off { opacity: 0; }
+  @keyframes drain { to { transform: scaleX(0); } }
+
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 14px 0 16px; }
+  .vol { display: flex; align-items: center; gap: 10px; margin: 0 0 0 auto; }
+  .vol input { width: 110px; padding: 0; border: 0; box-shadow: none; accent-color: var(--accent); }
+
+  .reveal { display: flex; gap: 18px; align-items: center; margin-bottom: 18px; }
+  .reveal img { width: 84px; height: 84px; object-fit: cover; flex-shrink: 0; border: 1px solid var(--line-strong); }
+  .big { font: 900 56px/1 var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; margin: 0; color: var(--accent); display: inline-block; }
+  .answers { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .answers tr { animation: rise .45s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 70ms + 150ms); }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+  .answers td { padding: 10px 4px; border-top: 1px solid var(--line); vertical-align: top; }
+  .answers td:first-child { color: var(--muted); width: 26%; text-transform: uppercase; font-size: 11px; letter-spacing: .1em; padding-top: 12px; }
+  .answers td:nth-child(2) { font-size: 15px; }
+  .pts { text-align: right; white-space: nowrap; }
+  .badge { display: inline-block; min-width: 44px; text-align: center; padding: 2px 10px; border-radius: 999px; font: 900 14px var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; }
+  .badge.ok { background: var(--accent); color: var(--accent-ink); }
+  .badge.mid { border: 1px solid var(--accent); color: var(--accent); }
+  .badge.ko { border: 1px solid var(--line-strong); color: var(--ko); }
+  .guess { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+  /* ---------- Fin ---------- */
+  #screen-end .big { font-size: clamp(64px, 16vw, 96px); letter-spacing: -0.03em; }
+  .recap { list-style: none; padding: 0; margin: 20px 0 0; }
+  .recap li { display: grid; grid-template-columns: 40px 1fr auto; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); animation: rise .45s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 50ms); }
+  .recap img { width: 40px; height: 40px; object-fit: cover; }
+  .recap span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .recap strong { font: 900 18px var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; }
+
+  @media (max-width: 480px) {
+    .row { grid-template-columns: 1fr; }
+    .card { padding: 18px; }
+    .vol { margin-left: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  }
 </style>
 </head>
 <body>
 <main>
-  <h1>Blindtest Likés</h1>
-  <p class="sub">Ta musique Spotify, à l'aveugle.</p>
+  <header>
+    <h1 class="display">Blindtest</h1>
+    <p class="sub">Ta musique Spotify, à l'aveugle</p>
+  </header>
 
-  <section id="screen-login" class="card hidden">
+  <section id="screen-login" class="card screen hidden">
     <h2>Connexion</h2>
     <div id="login-setup">
       <ol>
@@ -78,7 +182,7 @@
     <p id="login-error" class="status error"></p>
   </section>
 
-  <section id="screen-setup" class="card hidden">
+  <section id="screen-setup" class="card screen hidden">
     <h2>Préparer la partie</h2>
     <label for="opt-source">Titres à deviner</label>
     <select id="opt-source">
@@ -129,7 +233,7 @@
     </div>
   </section>
 
-  <section id="screen-denied" class="card hidden">
+  <section id="screen-denied" class="card screen hidden">
     <h2>Compte non autorisé</h2>
     <p>Ton compte Spotify n'est pas dans la liste des <strong>testeurs</strong> de cette app. Spotify bloque donc l'accès à ta bibliothèque.</p>
     <ol>
@@ -144,25 +248,30 @@
     </div>
   </section>
 
-  <section id="screen-round" class="hidden">
+  <section id="screen-round" class="screen hidden">
     <div class="topbar">
       <span>Titre <strong id="round-num"></strong></span>
       <span>Score <strong id="round-score"></strong></span>
     </div>
+    <div class="progress"><i id="round-progress"></i></div>
+    <div id="stage" class="stage">
+      <span id="stage-num" class="stage-big display"></span>
+      <span id="stage-title" class="stage-big stage-title display"></span>
+      <div id="countdown" class="countdown off"><i></i></div>
+    </div>
+    <div class="controls">
+      <button id="btn-replay" class="ghost" type="button">Réécouter</button>
+      <button id="btn-pause" class="ghost" type="button">Pause</button>
+      <button id="btn-skip" class="ghost" type="button" title="Titre illisible ou déjà vu : on le remplace">Passer</button>
+      <label class="vol">Volume <input id="volume" type="range" min="0" max="100" step="5"></label>
+    </div>
+    <p id="round-loading" class="status hidden">Chargement du son…</p>
+    <p id="round-error" class="status error"></p>
     <div class="card">
-      <div id="eq" class="eq paused"><span></span><span></span><span></span><span></span><span></span></div>
-      <div class="actions" style="margin-top:0">
-        <button id="btn-replay" class="ghost" type="button">Réécouter</button>
-        <button id="btn-pause" class="ghost" type="button">Pause</button>
-        <button id="btn-skip" class="ghost" type="button" title="Titre illisible ou déjà vu : on le remplace">Passer</button>
-        <label class="vol">Volume <input id="volume" type="range" min="0" max="100" step="5"></label>
-      </div>
-      <p id="round-loading" class="status hidden">Chargement du son…</p>
-      <p id="round-error" class="status error"></p>
       <form id="guess-form" autocomplete="off">
         <div class="row">
-          <div data-field="artist"><label for="g-artist" id="label-artist">Artiste</label><input id="g-artist"></div>
-          <div data-field="title"><label for="g-title">Titre</label><input id="g-title"></div>
+          <div data-field="artist"><label for="g-artist" id="label-artist" style="margin-top:0">Artiste</label><input id="g-artist"></div>
+          <div data-field="title"><label for="g-title" style="margin-top:0">Titre</label><input id="g-title"></div>
         </div>
         <div data-field="album"><label for="g-album">Album</label><input id="g-album"></div>
         <div class="row">
@@ -174,7 +283,7 @@
       <div id="result" class="hidden">
         <div class="reveal">
           <img id="r-cover" alt="">
-          <div><p class="big" id="r-points"></p><span class="status" id="r-max"></span></div>
+          <div><p class="big" id="r-points"></p><p class="status" id="r-max" style="margin:0"></p></div>
         </div>
         <table class="answers"><tbody id="r-table"></tbody></table>
         <div class="actions"><button id="btn-next" type="button">Suivant</button></div>
@@ -182,7 +291,7 @@
     </div>
   </section>
 
-  <section id="screen-end" class="card hidden">
+  <section id="screen-end" class="card screen hidden">
     <h2>Fini !</h2>
     <p class="big" id="end-score"></p>
     <p class="status" id="end-detail"></p>

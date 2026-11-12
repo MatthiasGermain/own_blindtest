@@ -258,7 +258,7 @@ let isPaused = true;
 function initPlayer() {
   return new Promise((resolve, reject) => {
     window.onSpotifyWebPlaybackSDKReady = () => {
-      player = new Spotify.Player({ name: 'Blindtest Likés', getOAuthToken: (cb) => getToken().then(cb), volume: store.get('volume', 70) / 100 });
+      player = new Spotify.Player({ name: 'Blindtest', getOAuthToken: (cb) => getToken().then(cb), volume: store.get('volume', 70) / 100 });
       player.addListener('ready', ({ device_id }) => {
         deviceId = device_id;
         // Making the browser the active device up front avoids a slow first play.
@@ -272,13 +272,16 @@ function initPlayer() {
       player.addListener('account_error', () => reject(new Error('La lecture nécessite un compte Spotify Premium.')));
       player.addListener('player_state_changed', (s) => {
         isPaused = !s || s.paused;
-        $('#eq').classList.toggle('paused', isPaused);
+        $('#stage').classList.toggle('playing', !isPaused);
         $('#btn-pause').textContent = isPaused ? 'Lecture' : 'Pause';
         const cur = s?.track_window?.current_track;
         if (!isPaused && pending && cur && (cur.uri === pending.uri || cur.linked_from?.uri === pending.uri)) {
           $('#round-loading').classList.add('hidden');
           clearTimeout(snippetTimer);
-          if (pending.snippetMs) snippetTimer = setTimeout(() => player.pause(), pending.snippetMs);
+          if (pending.snippetMs) {
+            snippetTimer = setTimeout(() => player.pause(), pending.snippetMs);
+            countdown('run', pending.snippetMs);
+          }
           pending = null;
         }
       });
@@ -291,11 +294,30 @@ function initPlayer() {
 let snippetTimer = null;
 let pending = null;
 
+// state: 'ready' (full bar, waiting for sound), 'run' (draining over ms), 'off' (hidden)
+function countdown(state, ms = 0) {
+  const c = $('#countdown');
+  c.classList.remove('run');
+  c.classList.toggle('off', state === 'off');
+  if (state === 'run') {
+    void c.offsetWidth;
+    c.style.setProperty('--dur', `${ms}ms`);
+    c.classList.add('run');
+  }
+}
+
+function bump(node) {
+  node.classList.remove('bump');
+  void node.offsetWidth;
+  node.classList.add('bump');
+}
+
 // The snippet countdown starts once the SDK reports the track playing, not at request time.
 async function playFrom(uri, positionMs, snippetMs) {
   clearTimeout(snippetTimer);
   pending = { uri, snippetMs };
   $('#round-loading').classList.remove('hidden');
+  countdown(snippetMs ? 'ready' : 'off');
   if (snippetMs) snippetTimer = setTimeout(() => player.pause(), snippetMs + 8000);
   try {
     await api(`/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
@@ -305,6 +327,7 @@ async function playFrom(uri, positionMs, snippetMs) {
   } catch (e) {
     pending = null;
     $('#round-loading').classList.add('hidden');
+    countdown('off');
     throw e;
   }
 }
@@ -358,6 +381,9 @@ async function startRound() {
   const total = game.results.reduce((s, r) => s + r.total, 0);
   $('#round-num').textContent = `${game.index + 1} / ${game.tracks.length}`;
   $('#round-score').textContent = total;
+  $('#round-progress').style.width = `${(game.index / game.tracks.length) * 100}%`;
+  $('#stage').classList.remove('revealed');
+  $('#stage-num').replaceChildren(String(game.index + 1).padStart(2, '0'), el('small', { textContent: `/${game.tracks.length}` }));
   $('#round-error').textContent = '';
   $('#guess-form').reset();
   $('#label-artist').textContent = t.artists.length > 1
@@ -413,14 +439,23 @@ function submitGuess(e) {
     year: t.releaseYear ?? '?', added: t.addedYear ?? '?',
   };
   $('#r-max').textContent = `sur ${game.fields.length * 10}`;
-  $('#r-table').replaceChildren(...game.fields.map((k) => el('tr', {}, [
+  $('#r-table').replaceChildren(...game.fields.map((k, i) => el('tr', { style: `--i: ${i}` }, [
     el('td', { textContent: label(k) }),
     el('td', {}, [String(truth[k]), el('div', { className: 'guess', textContent: guess[k] ? `ta réponse : ${guess[k]}` : 'pas de réponse' })]),
-    el('td', { className: 'pts ' + (pts[k] === 10 ? 'ok' : pts[k] > 0 ? 'mid' : 'ko'), textContent: `+${pts[k]}` }),
+    el('td', { className: 'pts' }, [
+      el('span', { className: 'badge ' + (pts[k] === 10 ? 'ok' : pts[k] > 0 ? 'mid' : 'ko'), textContent: `+${pts[k]}` }),
+    ]),
   ])));
   $('#r-cover').src = t.cover;
+  $('#r-cover').classList.toggle('hidden', !t.cover);
   $('#r-points').textContent = `+${total}`;
+  bump($('#r-points'));
   $('#round-score').textContent = game.results.reduce((s, r) => s + r.total, 0);
+  if (total) bump($('#round-score'));
+  $('#stage-title').textContent = t.name;
+  $('#stage').classList.add('revealed');
+  $('#round-progress').style.width = `${((game.index + 1) / game.tracks.length) * 100}%`;
+  countdown('off');
   $('#guess-form').classList.add('hidden');
   $('#btn-skip').classList.add('hidden');
   $('#result').classList.remove('hidden');
@@ -448,7 +483,8 @@ function endGame() {
   $('#end-detail').textContent = game.fields
     .map((k) => `${label(k)} ${game.results.reduce((s, r) => s + r.pts[k], 0)}`)
     .join(' · ');
-  $('#end-recap').replaceChildren(...game.results.map((r) => el('li', {}, [
+  $('#end-recap').replaceChildren(...game.results.map((r, i) => el('li', { style: `--i: ${i}` }, [
+    r.track.cover ? el('img', { src: r.track.cover, alt: '', loading: 'lazy' }) : el('span'),
     el('span', { textContent: `${r.track.artists[0]} — ${r.track.name}` }),
     el('strong', { textContent: `${r.total}` }),
   ])));
