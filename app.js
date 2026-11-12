@@ -97,17 +97,20 @@ async function getToken() {
 }
 
 async function api(path, opts = {}) {
+  const isGet = !opts.method || opts.method === 'GET';
   for (let attempt = 0; attempt < 5; attempt++) {
     const res = await fetch(path.startsWith('http') ? path : API + path, {
       ...opts,
       headers: { Authorization: 'Bearer ' + await getToken(), ...(opts.body ? { 'Content-Type': 'application/json' } : {}) },
     });
     if (res.status === 429) { await sleep((Number(res.headers.get('Retry-After')) || 2) * 1000); continue; }
+    if (res.status >= 500 && isGet && attempt < 3) { await sleep(1000 * 2 ** attempt); continue; }
     const txt = await res.text();
     let data = null;
     try { data = txt ? JSON.parse(txt) : null; } catch { /* some Spotify errors are plain text */ }
     const plain = txt.trim().startsWith('<') ? '' : txt.slice(0, 200);
-    const msg = data?.error?.message || plain || `Spotify ${res.status}`;
+    const fallback = res.status >= 500 ? `Spotify ne répond pas (${res.status})` : `Spotify ${res.status}`;
+    const msg = data?.error?.message || plain || fallback;
     if (res.status === 403 && /regist/i.test(msg)) {
       show('screen-denied');
       throw Object.assign(new Error("ton compte Spotify n'est pas autorisé sur cette app."), { notRegistered: true });
@@ -199,26 +202,30 @@ async function loadSource(force = false) {
   tracks = [];
   updateStartButton();
   const progress = (n, total) => { if (seq === loadSeq) status.textContent = `Chargement… ${n} / ${total}`; };
+  const step = async (what, fn) => {
+    try { return await fn(); } catch (e) { throw Object.assign(new Error(`${what} : ${e.message}`), { notRegistered: e.notRegistered }); }
+  };
 
   try {
     let list;
     if (source === 'liked') {
       list = !force && store.get('liked');
       if (!list?.length) {
-        list = await fetchAll('/me/tracks?limit=50', (it) => toTrack(it.track, it.added_at), progress);
+        list = await step('titres likés', () => fetchAll('/me/tracks?limit=50', (it) => toTrack(it.track, it.added_at), progress));
         store.set('liked', list);
       }
     } else if (source.startsWith('top:')) {
-      list = await fetchAll(`/me/top/tracks?limit=50&time_range=${source.slice(4)}`, (t) => toTrack(t, null), progress);
+      list = await step('plus écoutés', () => fetchAll(`/me/top/tracks?limit=50&time_range=${source.slice(4)}`, (t) => toTrack(t, null), progress));
     } else {
-      if (force || !$('#opt-playlist').options.length) await loadPlaylists();
+      if (force || !$('#opt-playlist').options.length) await step('liste de tes playlists', loadPlaylists);
       const id = $('#opt-playlist').value;
       if (!id) {
         if (seq === loadSeq) status.textContent = "Aucune playlist à toi (Spotify ne donne accès qu'aux playlists que tu as créées ou où tu collabores).";
         return;
       }
       store.set('playlist', id);
-      list = await fetchAll(`/playlists/${encodeURIComponent(id)}/items?limit=50`, (it) => toTrack(it.item ?? it.track, it.added_at), progress);
+      const name = ($('#opt-playlist').selectedOptions[0]?.textContent || 'playlist').replace(/ \([^)]*\)$/, '');
+      list = await step(`playlist « ${name} »`, () => fetchAll(`/playlists/${encodeURIComponent(id)}/items?limit=50`, (it) => toTrack(it.item ?? it.track, it.added_at), progress));
     }
     if (seq !== loadSeq) return;
     tracks = [...new Map(list.map((t) => [t.uri, t])).values()];
@@ -227,8 +234,8 @@ async function loadSource(force = false) {
     $('#opt-count').max = tracks.length;
     updateStartButton();
   } catch (e) {
-    if (seq !== loadSeq) return;
-    status.textContent = 'Erreur : ' + e.message;
+    if (seq !== loadSeq || e.notRegistered) return;
+    status.textContent = `Erreur (${e.message}). Clique sur « Recharger » pour réessayer.`;
     status.classList.add('error');
   }
 }
