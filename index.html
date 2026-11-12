@@ -48,6 +48,10 @@
   .recap { list-style: none; padding: 0; margin: 0; }
   .recap li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
   .recap li span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fields { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+  .fields label { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: var(--text); font-size: 14px; cursor: pointer; }
+  .fields label.off { color: var(--muted); cursor: not-allowed; }
+  .fields input { width: auto; accent-color: var(--accent); }
   .vol { display: flex; align-items: center; gap: 8px; margin: 0 0 0 auto; font-size: 13px; }
   .vol input { width: 110px; padding: 0; border: 0; background: none; accent-color: var(--accent); }
   @media (max-width: 480px) { .row { grid-template-columns: 1fr; } }
@@ -56,7 +60,7 @@
 <body>
 <main>
   <h1>Blindtest Likés</h1>
-  <p class="sub">Tes titres likés Spotify, à l'aveugle.</p>
+  <p class="sub">Ta musique Spotify, à l'aveugle.</p>
 
   <section id="screen-login" class="card hidden">
     <h2>Connexion</h2>
@@ -76,8 +80,28 @@
 
   <section id="screen-setup" class="card hidden">
     <h2>Préparer la partie</h2>
-    <p id="liked-status" class="status">Chargement des titres likés…</p>
+    <label for="opt-source">Titres à deviner</label>
+    <select id="opt-source">
+      <option value="liked">Mes titres likés</option>
+      <option value="top:short_term">Mes plus écoutés : 4 dernières semaines</option>
+      <option value="top:medium_term">Mes plus écoutés : 6 derniers mois</option>
+      <option value="top:long_term">Mes plus écoutés : depuis toujours</option>
+      <option value="playlist">Une de mes playlists</option>
+    </select>
+    <div id="playlist-pick" class="hidden">
+      <label for="opt-playlist">Playlist</label>
+      <select id="opt-playlist"></select>
+    </div>
+    <p id="source-status" class="status">Chargement…</p>
     <p id="player-status" class="status">Initialisation du lecteur…</p>
+    <label>Champs à deviner</label>
+    <div id="opt-fields" class="fields">
+      <label><input type="checkbox" value="artist"> Artiste</label>
+      <label><input type="checkbox" value="title"> Titre</label>
+      <label><input type="checkbox" value="album"> Album</label>
+      <label><input type="checkbox" value="year"> Année de sortie</label>
+      <label><input type="checkbox" value="added"> <span id="field-added-name">Année d'ajout</span></label>
+    </div>
     <div class="row">
       <div>
         <label for="opt-count">Nombre de titres</label>
@@ -100,8 +124,23 @@
     </select>
     <div class="actions">
       <button id="btn-start" disabled>Lancer le blindtest</button>
-      <button id="btn-reload" class="ghost">Recharger les likés</button>
+      <button id="btn-reload" class="ghost">Recharger</button>
       <button id="btn-logout" class="ghost">Déconnexion</button>
+    </div>
+  </section>
+
+  <section id="screen-denied" class="card hidden">
+    <h2>Compte non autorisé</h2>
+    <p>Ton compte Spotify n'est pas dans la liste des <strong>testeurs</strong> de cette app. Spotify bloque donc l'accès à ta bibliothèque.</p>
+    <ol>
+      <li>Ouvre Spotify → <em>Compte</em> → <em>Profil</em> et note l'<strong>adresse e-mail</strong> de ton compte.</li>
+      <li>Envoie-la à l'organisateur pour qu'il t'ajoute comme testeur.</li>
+      <li>Une fois ajouté, clique sur <em>Réessayer</em>.</li>
+    </ol>
+    <p class="status">Pas le bon compte Spotify ? Déconnecte-toi et reconnecte-toi avec le bon.</p>
+    <div class="actions">
+      <button id="btn-retry">Réessayer</button>
+      <button id="btn-logout-denied" class="ghost">Déconnexion</button>
     </div>
   </section>
 
@@ -122,20 +161,20 @@
       <p id="round-error" class="status error"></p>
       <form id="guess-form" autocomplete="off">
         <div class="row">
-          <div><label for="g-artist" id="label-artist">Artiste</label><input id="g-artist"></div>
-          <div><label for="g-title">Titre</label><input id="g-title"></div>
+          <div data-field="artist"><label for="g-artist" id="label-artist">Artiste</label><input id="g-artist"></div>
+          <div data-field="title"><label for="g-title">Titre</label><input id="g-title"></div>
         </div>
-        <label for="g-album">Album</label><input id="g-album">
+        <div data-field="album"><label for="g-album">Album</label><input id="g-album"></div>
         <div class="row">
-          <div><label for="g-year">Année de sortie</label><input id="g-year" inputmode="numeric" maxlength="4"></div>
-          <div><label for="g-added">Année où tu l'as liké</label><input id="g-added" inputmode="numeric" maxlength="4"></div>
+          <div data-field="year"><label for="g-year">Année de sortie</label><input id="g-year" inputmode="numeric" maxlength="4"></div>
+          <div data-field="added"><label for="g-added" id="label-added">Année d'ajout</label><input id="g-added" inputmode="numeric" maxlength="4"></div>
         </div>
         <div class="actions"><button type="submit">Valider</button></div>
       </form>
       <div id="result" class="hidden">
         <div class="reveal">
           <img id="r-cover" alt="">
-          <div><p class="big" id="r-points"></p><span class="status">sur 50</span></div>
+          <div><p class="big" id="r-points"></p><span class="status" id="r-max"></span></div>
         </div>
         <table class="answers"><tbody id="r-table"></tbody></table>
         <div class="actions"><button id="btn-next" type="button">Suivant</button></div>

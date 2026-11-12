@@ -3,6 +3,7 @@ const REDIRECT_URI = location.origin + location.pathname.replace(/index\.html$/,
 const SCOPES = [
   'user-library-read', 'streaming', 'user-read-email', 'user-read-private',
   'user-modify-playback-state', 'user-read-playback-state',
+  'user-top-read', 'playlist-read-private', 'playlist-read-collaborative',
 ].join(' ');
 
 const $ = (s) => document.querySelector(s);
@@ -64,12 +65,13 @@ async function tokenRequest(body) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: store.get('clientId'), ...body }),
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error_description || data.error || 'Erreur token');
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error_description || data.error || `Connexion Spotify refusée (${res.status})`);
   store.set('token', {
     access: data.access_token,
     refresh: data.refresh_token || store.get('token')?.refresh,
     expires: Date.now() + (data.expires_in - 60) * 1000,
+    scope: data.scope ?? store.get('token')?.scope ?? SCOPES,
   });
 }
 
@@ -102,10 +104,13 @@ async function api(path, opts = {}) {
     });
     if (res.status === 429) { await sleep((Number(res.headers.get('Retry-After')) || 2) * 1000); continue; }
     const txt = await res.text();
-    const data = txt ? JSON.parse(txt) : null;
-    const msg = data?.error?.message || `Spotify ${res.status}`;
+    let data = null;
+    try { data = txt ? JSON.parse(txt) : null; } catch { /* some Spotify errors are plain text */ }
+    const plain = txt.trim().startsWith('<') ? '' : txt.slice(0, 200);
+    const msg = data?.error?.message || plain || `Spotify ${res.status}`;
     if (res.status === 403 && /regist/i.test(msg)) {
-      throw new Error("ton compte Spotify n'est pas autorisé sur cette app. Demande à l'organisateur de t'ajouter.");
+      show('screen-denied');
+      throw Object.assign(new Error("ton compte Spotify n'est pas autorisé sur cette app."), { notRegistered: true });
     }
     if (!res.ok) throw new Error(msg);
     return data;
@@ -120,42 +125,121 @@ function logout() {
   location.replace(REDIRECT_URI);
 }
 
-/* ---------- Titres likés ---------- */
+/* ---------- Sources de titres ---------- */
 
-let liked = [];
+let tracks = [];
+let loadSeq = 0;
 
-async function loadLiked(force = false) {
-  const status = $('#liked-status');
-  const cached = !force && store.get('liked');
-  if (cached?.length) {
-    liked = cached;
-  } else {
-    const tracks = [];
-    let url = '/me/tracks?limit=50';
-    while (url) {
-      const data = await api(url);
-      for (const { track: t, added_at } of data.items) {
-        if (!t || t.is_local || !t.uri) continue;
-        tracks.push({
-          uri: t.uri,
-          name: t.name,
-          artists: t.artists.map((a) => a.name),
-          album: t.album.name,
-          releaseYear: parseInt(t.album.release_date, 10) || null,
-          addedYear: new Date(added_at).getFullYear(),
-          cover: t.album.images?.[0]?.url || '',
-          duration: t.duration_ms,
-        });
-      }
-      status.textContent = `Chargement des titres likés… ${tracks.length} / ${data.total}`;
-      url = data.next;
+// [label in the form, short label in results]; top tracks have no "added" date.
+const ADDED_NAMES = {
+  liked: ["Année où tu l'as liké", 'Liké en'],
+  playlist: ["Année d'ajout à la playlist", 'Ajouté en'],
+};
+
+function toTrack(t, addedAt) {
+  if (!t || t.is_local || !t.uri || (t.type && t.type !== 'track')) return null;
+  return {
+    uri: t.uri,
+    name: t.name,
+    artists: t.artists.map((a) => a.name),
+    album: t.album.name,
+    releaseYear: parseInt(t.album.release_date, 10) || null,
+    addedYear: addedAt ? new Date(addedAt).getFullYear() : null,
+    cover: t.album.images?.[0]?.url || '',
+    duration: t.duration_ms,
+  };
+}
+
+async function fetchAll(url, pick, onProgress) {
+  const out = [];
+  while (url) {
+    const data = await api(url);
+    for (const it of data.items) {
+      const x = it && pick(it);
+      if (x) out.push(x);
     }
-    liked = tracks;
-    store.set('liked', liked);
+    onProgress?.(out.length, data.total);
+    url = data.next;
   }
-  status.textContent = `${liked.length} titres likés prêts.`;
-  $('#opt-count').max = liked.length;
+  return out;
+}
+
+// Since Feb 2026, Spotify only returns the contents of playlists the user owns or collaborates on.
+async function loadPlaylists() {
+  let me = null;
+  try { me = (await api('/me')).id; } catch { /* keep every playlist */ }
+  const lists = await fetchAll('/me/playlists?limit=50', (p) => p);
+  const usable = lists.filter((p) => !me || p.owner?.id === me || p.collaborative);
+  const saved = store.get('playlist');
+  $('#opt-playlist').replaceChildren(...usable.map((p) => el('option', {
+    value: p.id,
+    textContent: `${p.name} (${(p.items ?? p.tracks)?.total ?? '?'})`,
+    selected: p.id === saved,
+  })));
+}
+
+function updateSourceFields(source) {
+  const names = ADDED_NAMES[source.split(':')[0]];
+  const box = $('#opt-fields input[value="added"]');
+  box.disabled = !names;
+  box.closest('label').classList.toggle('off', !names);
+  box.closest('label').title = names ? '' : "Spotify ne donne pas de date d'ajout pour cette source";
+  $('#field-added-name').textContent = names ? names[0] : "Année d'ajout (indisponible ici)";
+}
+
+async function loadSource(force = false) {
+  const seq = ++loadSeq;
+  const source = $('#opt-source').value;
+  const status = $('#source-status');
+  store.set('source', source);
+  status.classList.remove('error');
+  status.textContent = 'Chargement…';
+  $('#playlist-pick').classList.toggle('hidden', source !== 'playlist');
+  updateSourceFields(source);
+  tracks = [];
   updateStartButton();
+  const progress = (n, total) => { if (seq === loadSeq) status.textContent = `Chargement… ${n} / ${total}`; };
+
+  try {
+    let list;
+    if (source === 'liked') {
+      list = !force && store.get('liked');
+      if (!list?.length) {
+        list = await fetchAll('/me/tracks?limit=50', (it) => toTrack(it.track, it.added_at), progress);
+        store.set('liked', list);
+      }
+    } else if (source.startsWith('top:')) {
+      list = await fetchAll(`/me/top/tracks?limit=50&time_range=${source.slice(4)}`, (t) => toTrack(t, null), progress);
+    } else {
+      if (force || !$('#opt-playlist').options.length) await loadPlaylists();
+      const id = $('#opt-playlist').value;
+      if (!id) {
+        if (seq === loadSeq) status.textContent = "Aucune playlist à toi (Spotify ne donne accès qu'aux playlists que tu as créées ou où tu collabores).";
+        return;
+      }
+      store.set('playlist', id);
+      list = await fetchAll(`/playlists/${encodeURIComponent(id)}/items?limit=50`, (it) => toTrack(it.item ?? it.track, it.added_at), progress);
+    }
+    if (seq !== loadSeq) return;
+    tracks = [...new Map(list.map((t) => [t.uri, t])).values()];
+    const s = tracks.length > 1 ? 's' : '';
+    status.textContent = tracks.length ? `${tracks.length} titre${s} prêt${s}.` : 'Aucun titre lisible ici.';
+    $('#opt-count').max = tracks.length;
+    updateStartButton();
+  } catch (e) {
+    if (seq !== loadSeq) return;
+    status.textContent = 'Erreur : ' + e.message;
+    status.classList.add('error');
+  }
+}
+
+/* ---------- Champs à deviner ---------- */
+
+const ALL_FIELDS = ['artist', 'title', 'album', 'year', 'added'];
+const LABELS = { artist: 'Artiste', title: 'Titre', album: 'Album', year: 'Sortie', added: 'Ajouté en' };
+
+function selectedFields() {
+  return [...document.querySelectorAll('#opt-fields input')].filter((i) => i.checked && !i.disabled).map((i) => i.value);
 }
 
 /* ---------- Lecteur (Web Playback SDK, Premium requis) ---------- */
@@ -228,7 +312,7 @@ function setVolume(v) {
 let game = null;
 
 function updateStartButton() {
-  $('#btn-start').disabled = !(liked.length && deviceId);
+  $('#btn-start').disabled = !(tracks.length && deviceId && selectedFields().length);
 }
 
 function shuffle(arr) {
@@ -242,9 +326,12 @@ function shuffle(arr) {
 
 function startGame() {
   player.activateElement();
-  const count = Math.max(1, Math.min(liked.length, parseInt($('#opt-count').value, 10) || 10));
-  const pool = shuffle(liked);
+  const count = Math.max(1, Math.min(tracks.length, parseInt($('#opt-count').value, 10) || 10));
+  const pool = shuffle(tracks);
+  const names = ADDED_NAMES[$('#opt-source').value.split(':')[0]] || ["Année d'ajout", 'Ajouté en'];
   game = {
+    fields: selectedFields(),
+    addedNames: names,
     tracks: pool.slice(0, count),
     pool: pool.slice(count),
     index: 0,
@@ -269,10 +356,14 @@ async function startRound() {
   $('#label-artist').textContent = t.artists.length > 1
     ? `Artistes (${t.artists.length} attendus, séparés par des virgules)`
     : 'Artiste';
+  $('#label-added').textContent = game.addedNames[0];
+  for (const d of document.querySelectorAll('#guess-form [data-field]')) {
+    d.classList.toggle('hidden', !game.fields.includes(d.dataset.field));
+  }
   $('#guess-form').classList.remove('hidden');
   $('#result').classList.add('hidden');
   $('#btn-skip').classList.remove('hidden');
-  $('#g-artist').focus();
+  $('#guess-form [data-field]:not(.hidden) input').focus();
   await replay();
 }
 
@@ -296,7 +387,7 @@ function skip() {
   }
 }
 
-const LABELS = { artist: 'Artiste', title: 'Titre', album: 'Album', year: 'Sortie', added: 'Liké en' };
+const label = (k) => (k === 'added' ? game.addedNames[1] : LABELS[k]);
 
 function submitGuess(e) {
   e.preventDefault();
@@ -305,16 +396,18 @@ function submitGuess(e) {
     artist: $('#g-artist').value, title: $('#g-title').value, album: $('#g-album').value,
     year: $('#g-year').value, added: $('#g-added').value,
   };
-  const pts = Scoring.round(guess, t);
+  const all = Scoring.round(guess, t);
+  const pts = Object.fromEntries(game.fields.map((k) => [k, all[k]]));
   const total = Object.values(pts).reduce((a, b) => a + b, 0);
   game.results.push({ track: t, pts, total });
 
   const truth = {
     artist: t.artists.join(', '), title: t.name, album: t.album,
-    year: t.releaseYear ?? '?', added: t.addedYear,
+    year: t.releaseYear ?? '?', added: t.addedYear ?? '?',
   };
-  $('#r-table').replaceChildren(...Object.keys(LABELS).map((k) => el('tr', {}, [
-    el('td', { textContent: LABELS[k] }),
+  $('#r-max').textContent = `sur ${game.fields.length * 10}`;
+  $('#r-table').replaceChildren(...game.fields.map((k) => el('tr', {}, [
+    el('td', { textContent: label(k) }),
     el('td', {}, [String(truth[k]), el('div', { className: 'guess', textContent: guess[k] ? `ta réponse : ${guess[k]}` : 'pas de réponse' })]),
     el('td', { className: 'pts ' + (pts[k] === 10 ? 'ok' : pts[k] > 0 ? 'mid' : 'ko'), textContent: `+${pts[k]}` }),
   ])));
@@ -343,10 +436,11 @@ function endGame() {
   $('#round-loading').classList.add('hidden');
   player.pause();
   const total = game.results.reduce((s, r) => s + r.total, 0);
-  const max = game.results.length * 50;
+  const max = game.results.length * game.fields.length * 10;
   $('#end-score').textContent = `${total} / ${max}`;
-  const sums = Object.fromEntries(Object.keys(LABELS).map((k) => [k, game.results.reduce((s, r) => s + r.pts[k], 0)]));
-  $('#end-detail').textContent = Object.keys(LABELS).map((k) => `${LABELS[k]} ${sums[k]}`).join(' · ');
+  $('#end-detail').textContent = game.fields
+    .map((k) => `${label(k)} ${game.results.reduce((s, r) => s + r.pts[k], 0)}`)
+    .join(' · ');
   $('#end-recap').replaceChildren(...game.results.map((r) => el('li', {}, [
     el('span', { textContent: `${r.track.artists[0]} — ${r.track.name}` }),
     el('strong', { textContent: `${r.total}` }),
@@ -365,7 +459,22 @@ async function main() {
   }
   $('#btn-login').onclick = login;
   $('#btn-logout').onclick = logout;
-  $('#btn-reload').onclick = () => loadLiked(true).catch((e) => { $('#liked-status').textContent = e.message; });
+  $('#btn-logout-denied').onclick = logout;
+  $('#btn-retry').onclick = () => { store.del('liked'); location.reload(); };
+  $('#btn-reload').onclick = () => loadSource(true);
+  $('#opt-source').value = store.get('source', 'liked');
+  if (!$('#opt-source').value) $('#opt-source').value = 'liked';
+  $('#opt-source').onchange = () => loadSource();
+  $('#opt-playlist').onchange = () => loadSource();
+  const savedFields = store.get('fields', ALL_FIELDS);
+  const fieldBoxes = [...document.querySelectorAll('#opt-fields input')];
+  for (const box of fieldBoxes) {
+    box.checked = savedFields.includes(box.value);
+    box.onchange = () => {
+      store.set('fields', fieldBoxes.filter((b) => b.checked).map((b) => b.value));
+      updateStartButton();
+    };
+  }
   $('#btn-start').onclick = startGame;
   $('#btn-replay').onclick = replay;
   $('#btn-pause').onclick = () => player.togglePlay();
@@ -381,10 +490,14 @@ async function main() {
   } catch (e) {
     $('#login-error').textContent = e.message;
   }
+  if (store.get('token') && !store.get('token').scope) {
+    store.del('token');
+    $('#login-error').textContent = "Nouvelle version : reconnecte-toi pour autoriser l'accès à tes playlists et à tes plus écoutés.";
+  }
   if (!store.get('token')) { show('screen-login'); return; }
 
   show('screen-setup');
-  loadLiked().catch((e) => { $('#liked-status').textContent = 'Erreur : ' + e.message; $('#liked-status').classList.add('error'); });
+  loadSource();
   initPlayer()
     .then(() => { $('#player-status').textContent = 'Lecteur prêt.'; updateStartButton(); })
     .catch((e) => { $('#player-status').textContent = e.message; $('#player-status').classList.add('error'); });
