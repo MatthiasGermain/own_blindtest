@@ -124,6 +124,7 @@ async function api(path, opts = {}) {
 function logout() {
   store.del('token');
   store.del('liked');
+  store.del('myName');
   player?.disconnect();
   location.replace(REDIRECT_URI);
 }
@@ -343,6 +344,7 @@ let game = null;
 
 function updateStartButton() {
   $('#btn-start').disabled = !(tracks.length && deviceId && selectedFields().length);
+  $('#btn-challenge').disabled = !deviceId;
 }
 
 function shuffle(arr) {
@@ -354,36 +356,72 @@ function shuffle(arr) {
   return a;
 }
 
-function startGame() {
+const TOP_NAMES = { short_term: 'Top 4 semaines', medium_term: 'Top 6 mois', long_term: 'Top de toujours' };
+
+function beginGame(settings) {
   player.activateElement();
-  const count = Math.max(1, Math.min(tracks.length, parseInt($('#opt-count').value, 10) || 10));
-  const pool = shuffle(tracks);
-  const names = ADDED_NAMES[$('#opt-source').value.split(':')[0]] || ["Année d'ajout", 'Ajouté en'];
-  game = {
-    fields: selectedFields(),
-    addedNames: names,
-    tracks: pool.slice(0, count),
-    pool: pool.slice(count),
-    index: 0,
-    results: [],
-    snippetMs: parseInt($('#opt-snippet').value, 10) * 1000,
-    randomStart: $('#opt-start').value === 'random',
-  };
+  game = { index: 0, results: [], pool: [], challenge: null, fixedStarts: false, ...settings };
   show('screen-round');
   startRound();
 }
+
+function startGame() {
+  const mode = $('#opt-mode').value;
+  const source = $('#opt-source').value;
+  const kind = source.split(':')[0];
+  const pool = shuffle(tracks);
+  const count = mode === 'sudden' ? pool.length : Math.max(1, Math.min(pool.length, parseInt($('#opt-count').value, 10) || 10));
+  beginGame({
+    mode,
+    kind,
+    detail: kind === 'top' ? TOP_NAMES[source.slice(4)] : kind === 'playlist' ? $('#opt-playlist').selectedOptions[0]?.textContent.replace(/ \([^)]*\)$/, '') : '',
+    fields: selectedFields(),
+    addedNames: ADDED_NAMES[kind] || ["Année d'ajout", 'Ajouté en'],
+    tracks: pool.slice(0, count),
+    pool: mode === 'sudden' ? [] : pool.slice(count),
+    snippetMs: parseInt($('#opt-snippet').value, 10) * 1000,
+    randomStart: $('#opt-start').value === 'random',
+  });
+}
+
+function startChallenge() {
+  const c = pendingChallenge;
+  dropChallenge();
+  const addedNames = c.kind === 'liked'
+    ? [`Année où ${c.owner} l'a liké`, 'Liké en']
+    : ["Année d'ajout à la playlist", 'Ajouté en'];
+  beginGame({
+    mode: c.mode,
+    kind: c.kind,
+    fields: c.fields,
+    addedNames,
+    tracks: c.tracks.map((t) => ({ ...t })),
+    snippetMs: c.snippetMs,
+    fixedStarts: true,
+    challenge: c,
+  });
+}
+
+const streak = () => game.results.filter((r) => r.survived).length;
+const totalPoints = () => game.results.reduce((s, r) => s + r.total, 0);
 
 function currentTrack() { return game.tracks[game.index]; }
 
 async function startRound() {
   const t = currentTrack();
-  t.startMs = game.randomStart ? Math.floor(t.duration * (0.2 + Math.random() * 0.4)) : 0;
-  const total = game.results.reduce((s, r) => s + r.total, 0);
-  $('#round-num').textContent = `${game.index + 1} / ${game.tracks.length}`;
-  $('#round-score').textContent = total;
+  if (!game.fixedStarts) t.startMs = game.randomStart ? Math.floor(t.duration * (0.2 + Math.random() * 0.4)) : 0;
+  const sudden = game.mode === 'sudden';
+  const num = String(game.index + 1).padStart(2, '0');
+  $('#round-num').textContent = sudden ? `${game.index + 1}` : `${game.index + 1} / ${game.tracks.length}`;
+  $('#score-label').textContent = sudden ? 'Série' : 'Score';
+  $('#round-score').textContent = sudden ? streak() : totalPoints();
+  $('#round-progress-bar').classList.toggle('hidden', sudden);
   $('#round-progress').style.width = `${(game.index / game.tracks.length) * 100}%`;
+  const c = game.challenge;
+  $('#round-target').classList.toggle('hidden', !c);
+  if (c) $('#round-target').textContent = sudden ? `À battre : la série de ${c.score} de ${c.name}` : `À battre : ${c.score} / ${c.max} de ${c.name}`;
   $('#stage').classList.remove('revealed');
-  $('#stage-num').replaceChildren(String(game.index + 1).padStart(2, '0'), el('small', { textContent: `/${game.tracks.length}` }));
+  $('#stage-num').replaceChildren(num, ...(sudden ? [] : [el('small', { textContent: `/${game.tracks.length}` })]));
   $('#round-error').textContent = '';
   $('#guess-form').reset();
   $('#label-artist').textContent = t.artists.length > 1
@@ -432,13 +470,19 @@ function submitGuess(e) {
   const all = Scoring.round(guess, t);
   const pts = Object.fromEntries(game.fields.map((k) => [k, all[k]]));
   const total = Object.values(pts).reduce((a, b) => a + b, 0);
-  game.results.push({ track: t, pts, total });
+  const max = game.fields.length * 10;
+  const sudden = game.mode === 'sudden';
+  // Sudden death: you survive by finding the artist or the title (or half the points if neither is asked).
+  const keyFields = game.fields.filter((k) => k === 'artist' || k === 'title');
+  const survived = keyFields.length ? keyFields.some((k) => pts[k] > 0) : total * 2 >= max;
+  const grid = sudden ? (survived ? 2 : 0) : total === max ? 2 : total > 0 ? 1 : 0;
+  game.results.push({ track: t, pts, total, survived, grid });
 
   const truth = {
     artist: t.artists.join(', '), title: t.name, album: t.album,
     year: t.releaseYear ?? '?', added: t.addedYear ?? '?',
   };
-  $('#r-max').textContent = `sur ${game.fields.length * 10}`;
+  $('#r-max').textContent = sudden ? `sur ${max} · ${survived ? 'la série continue' : 'fin de la série'}` : `sur ${max}`;
   $('#r-table').replaceChildren(...game.fields.map((k, i) => el('tr', { style: `--i: ${i}` }, [
     el('td', { textContent: label(k) }),
     el('td', {}, [String(truth[k]), el('div', { className: 'guess', textContent: guess[k] ? `ta réponse : ${guess[k]}` : 'pas de réponse' })]),
@@ -450,8 +494,8 @@ function submitGuess(e) {
   $('#r-cover').classList.toggle('hidden', !t.cover);
   $('#r-points').textContent = `+${total}`;
   bump($('#r-points'));
-  $('#round-score').textContent = game.results.reduce((s, r) => s + r.total, 0);
-  if (total) bump($('#round-score'));
+  $('#round-score').textContent = sudden ? streak() : totalPoints();
+  if (sudden ? survived : total) bump($('#round-score'));
   $('#stage-title').textContent = t.name;
   $('#stage').classList.add('revealed');
   $('#round-progress').style.width = `${((game.index + 1) / game.tracks.length) * 100}%`;
@@ -459,7 +503,8 @@ function submitGuess(e) {
   $('#guess-form').classList.add('hidden');
   $('#btn-skip').classList.add('hidden');
   $('#result').classList.remove('hidden');
-  $('#btn-next').textContent = game.index + 1 < game.tracks.length ? 'Suivant' : 'Voir le score';
+  const over = (sudden && !survived) || game.index + 1 >= game.tracks.length;
+  $('#btn-next').textContent = over ? 'Voir le score' : 'Suivant';
   $('#btn-next').focus();
 
   clearTimeout(snippetTimer);
@@ -468,6 +513,8 @@ function submitGuess(e) {
 }
 
 function next() {
+  const last = game.results.at(-1);
+  if (game.mode === 'sudden' && last && !last.survived) { endGame(); return; }
   game.index++;
   game.index < game.tracks.length ? startRound() : endGame();
 }
@@ -477,18 +524,145 @@ function endGame() {
   pending = null;
   $('#round-loading').classList.add('hidden');
   player.pause();
-  const total = game.results.reduce((s, r) => s + r.total, 0);
+  const sudden = game.mode === 'sudden';
+  const total = totalPoints();
   const max = game.results.length * game.fields.length * 10;
-  $('#end-score').textContent = `${total} / ${max}`;
-  $('#end-detail').textContent = game.fields
-    .map((k) => `${label(k)} ${game.results.reduce((s, r) => s + r.pts[k], 0)}`)
-    .join(' · ');
+  const mine = sudden ? streak() : total;
+  $('#end-title').textContent = sudden ? 'Mort subite' : 'Fini !';
+  $('#end-score').textContent = sudden ? `Série de ${mine}` : `${total} / ${max}`;
+  $('#end-detail').textContent = sudden
+    ? `${total} points sur ${game.results.length} titre${game.results.length > 1 ? 's' : ''}`
+    : game.fields.map((k) => `${label(k)} ${game.results.reduce((s, r) => s + r.pts[k], 0)}`).join(' · ');
+
+  const grid = game.results.map((r) => r.grid);
+  const c = game.challenge;
+  $('#end-verdict').classList.toggle('hidden', !c);
+  $('#end-grid-them').classList.toggle('hidden', !c);
+  $('#end-grid').replaceChildren(...(c ? [el('small', { textContent: 'Toi' })] : []), Challenge.squares(grid));
+  if (c) {
+    $('#end-verdict').textContent = mine > c.score ? `Tu bats ${c.name} : ${mine} contre ${c.score}.`
+      : mine < c.score ? `${c.name} gagne : ${c.score} contre ${mine}.`
+      : `Égalité avec ${c.name} : ${mine} partout.`;
+    $('#end-grid-them').replaceChildren(el('small', { textContent: c.name }), Challenge.squares(c.grid));
+  }
+
   $('#end-recap').replaceChildren(...game.results.map((r, i) => el('li', { style: `--i: ${i}` }, [
     r.track.cover ? el('img', { src: r.track.cover, alt: '', loading: 'lazy' }) : el('span'),
     el('span', { textContent: `${r.track.artists[0]} — ${r.track.name}` }),
     el('strong', { textContent: `${r.total}` }),
   ])));
   show('screen-end');
+  prepareShare(mine, max, grid);
+}
+
+/* ---------- Partage et défis ---------- */
+
+let pendingChallenge = null;
+
+async function myName() {
+  const cached = store.get('myName');
+  if (cached) return cached;
+  let name = 'Un pote';
+  try { name = (await api('/me')).display_name || name; } catch { /* keep the fallback */ }
+  store.set('myName', name);
+  return name;
+}
+
+function sourceLabel(name) {
+  if (game.challenge) return game.challenge.source;
+  if (game.kind === 'playlist') return `Playlist « ${game.detail} »`;
+  if (game.kind === 'top') return `${game.detail} de ${name}`;
+  return `Likés de ${name}`;
+}
+
+async function prepareShare(score, max, grid) {
+  const btn = $('#btn-share');
+  btn.disabled = true;
+  $('#share-link').value = '';
+  $('#share-feedback').textContent = '';
+  try {
+    const name = await myName();
+    const sudden = game.mode === 'sudden';
+    const played = game.results.map((r) => r.track);
+    // Sudden death needs tracks beyond the fatal one so the next player can beat the streak.
+    const extra = sudden ? game.tracks.slice(game.index + 1, game.index + 16) : [];
+    const source = sourceLabel(name);
+    const code = await Challenge.encode({
+      name,
+      owner: game.challenge?.owner ?? name,
+      kind: game.kind,
+      source,
+      mode: game.mode,
+      fields: game.fields,
+      snippetMs: game.snippetMs,
+      score,
+      max,
+      grid,
+      tracks: [...played, ...extra],
+    });
+    const url = `${REDIRECT_URI}#c=${code}`;
+    const head = sudden ? `Blindtest · Mort subite · ${source} · série de ${score}` : `Blindtest · ${source} · ${score}/${max}`;
+    game.shareText = `${head}\n${Challenge.squares(grid)}\nÀ toi de battre ça : ${url}`;
+    $('#share-link').value = url;
+    btn.disabled = false;
+  } catch (e) {
+    $('#share-feedback').textContent = `Impossible de créer le lien de défi (${e.message}).`;
+  }
+}
+
+async function shareGame() {
+  const feedback = $('#share-feedback');
+  if (navigator.share && matchMedia('(pointer: coarse)').matches) {
+    try { await navigator.share({ text: game.shareText }); return; } catch (e) { if (e.name === 'AbortError') return; }
+  }
+  try {
+    await navigator.clipboard.writeText(game.shareText);
+    feedback.textContent = 'Copié ! Colle-le dans ton groupe.';
+  } catch {
+    $('#share-link').select();
+    feedback.textContent = 'Copie le lien ci-dessus.';
+  }
+}
+
+function showChallenge() {
+  const c = pendingChallenge;
+  const what = c.mode === 'sudden'
+    ? `Mort subite · ${c.source} · série à battre : ${c.score}`
+    : `${c.tracks.length} titres · ${c.source} · score à battre : ${c.score} / ${c.max}`;
+  const fields = c.fields.map((k) => (k === 'added' ? "année d'ajout" : LABELS[k].toLowerCase())).join(', ');
+  $('#login-challenge-title').textContent = `${c.name} te défie !`;
+  $('#challenge-title').textContent = `${c.name} te défie !`;
+  $('#challenge-desc').textContent = `${what}. À deviner : ${fields}.`;
+  $('#login-challenge').classList.remove('hidden');
+  $('#challenge-box').classList.remove('hidden');
+}
+
+function dropChallenge() {
+  pendingChallenge = null;
+  store.del('challengeCode');
+  $('#challenge-box').classList.add('hidden');
+  $('#login-challenge').classList.add('hidden');
+}
+
+// The OAuth redirect loses the URL hash, so a challenge link is parked in storage first.
+function captureChallenge() {
+  const code = location.hash.match(/^#c=([A-Za-z0-9_-]+)$/)?.[1];
+  if (code) {
+    store.set('challengeCode', code);
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+  const saved = store.get('challengeCode');
+  if (!saved) return;
+  Challenge.decode(saved)
+    .then((c) => { pendingChallenge = c; showChallenge(); })
+    .catch(() => store.del('challengeCode'));
+}
+
+function updateModeHint() {
+  const sudden = $('#opt-mode').value === 'sudden';
+  store.set('mode', $('#opt-mode').value);
+  $('#mode-hint').classList.toggle('hidden', !sudden);
+  $('#count-wrap').classList.toggle('hidden', sudden);
 }
 
 /* ---------- Démarrage ---------- */
@@ -524,6 +698,14 @@ async function main() {
   $('#btn-skip').onclick = skip;
   $('#btn-next').onclick = next;
   $('#btn-again').onclick = () => show('screen-setup');
+  $('#btn-share').onclick = shareGame;
+  $('#btn-challenge').onclick = startChallenge;
+  $('#btn-challenge-skip').onclick = dropChallenge;
+  $('#opt-mode').value = store.get('mode', 'classic');
+  if (!$('#opt-mode').value) $('#opt-mode').value = 'classic';
+  $('#opt-mode').onchange = updateModeHint;
+  updateModeHint();
+  captureChallenge();
   $('#guess-form').onsubmit = submitGuess;
   $('#volume').value = store.get('volume', 70);
   $('#volume').oninput = (e) => setVolume(Number(e.target.value));
