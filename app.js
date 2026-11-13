@@ -138,7 +138,12 @@ let loadSeq = 0;
 const ADDED_NAMES = {
   liked: ["Année où tu l'as liké", 'Liké en'],
   playlist: ["Année d'ajout à la playlist", 'Ajouté en'],
+  dzliked: ["Année où tu l'as mis en coup de cœur", 'Coup de cœur en'],
+  dzplaylist: ["Année d'ajout à la playlist", 'Ajouté en'],
 };
+
+// The imported history and Deezer profiles play Deezer previews; the rest needs the Spotify player.
+const onDeezer = (kind) => kind === 'history' || kind.startsWith('dz');
 
 function toTrack(t, addedAt) {
   if (!t || t.is_local || !t.uri || (t.type && t.type !== 'track')) return null;
@@ -175,6 +180,7 @@ async function loadPlaylists() {
   const lists = await fetchAll('/me/playlists?limit=50', (p) => p);
   const usable = lists.filter((p) => !me || p.owner?.id === me || p.collaborative);
   const saved = store.get('playlist');
+  $('#opt-playlist').dataset.from = 'spotify';
   $('#opt-playlist').replaceChildren(...usable.map((p) => el('option', {
     value: p.id,
     textContent: `${p.name} (${(p.items ?? p.tracks)?.total ?? '?'})`,
@@ -183,12 +189,85 @@ async function loadPlaylists() {
 }
 
 function updateSourceFields(source) {
-  const names = ADDED_NAMES[source.split(':')[0]];
-  const box = $('#opt-fields input[value="added"]');
-  box.disabled = !names;
-  box.closest('label').classList.toggle('off', !names);
-  box.closest('label').title = names ? '' : "Spotify ne donne pas de date d'ajout pour cette source";
-  $('#field-added-name').textContent = names ? names[0] : "Année d'ajout (indisponible ici)";
+  const kind = source.split(':')[0];
+  for (const chip of document.querySelectorAll('#opt-fields [data-sources]')) {
+    chip.classList.toggle('hidden', !chip.dataset.sources.split(' ').includes(kind));
+  }
+  $('#field-added-name').textContent = (ADDED_NAMES[kind] || ["Année d'ajout"])[0];
+}
+
+// The most played tracks make the game: they are the ones you should recognise.
+function historyTracks() {
+  const h = store.get('history');
+  if (!h?.tracks) return [];
+  return h.tracks.filter((t) => t.p >= 3).slice(0, 400).map((t) => ({
+    uri: t.u || `hist:${t.a}|${t.n}`,
+    name: t.n,
+    artists: [t.a],
+    album: t.al || '',
+    plays: t.p,
+    firstYear: t.f,
+    cover: '',
+    duration: 30000,
+  }));
+}
+
+/* ---------- Profil Deezer public ---------- */
+
+let deezerPlaylists = null;
+
+async function deezerPlaylistList(force) {
+  if (force || !deezerPlaylists) deezerPlaylists = await Deezer.profile.playlists(store.get('deezerUser').id);
+  return deezerPlaylists;
+}
+
+// Resolves to the tracks, or null when the profile has no public playlist to pick.
+async function loadDeezerSource(source, force) {
+  const user = store.get('deezerUser');
+  if (source === 'dztop') return Deezer.profile.top(user.id);
+  const lists = await deezerPlaylistList(force);
+  if (source === 'dzliked') {
+    const loved = lists.find((p) => p.loved);
+    return loved ? Deezer.profile.playlist(loved.id) : [];
+  }
+  const pick = $('#opt-playlist');
+  if (force) pick.dataset.from = '';
+  const usable = lists.filter((p) => !p.loved && p.total > 0);
+  if (pick.dataset.from !== 'deezer') {
+    const saved = store.get('dzPlaylist');
+    pick.dataset.from = 'deezer';
+    pick.replaceChildren(...usable.map((p) => el('option', { value: p.id, textContent: `${p.title} (${p.total})`, selected: p.id === saved })));
+  }
+  if (!pick.value) return null;
+  store.set('dzPlaylist', pick.value);
+  return Deezer.profile.playlist(pick.value);
+}
+
+async function connectDeezer(e) {
+  e.preventDefault();
+  const status = $('#deezer-status');
+  status.classList.remove('error');
+  const id = Deezer.profile.id($('#deezer-profile').value);
+  if (!id) {
+    status.textContent = /link\.deezer|deezer\.page\.link/i.test($('#deezer-profile').value)
+      ? "Ce lien de partage ne s'ouvre pas ici : ouvre-le dans ton navigateur et copie l'adresse finale, avec /profile/ et des chiffres."
+      : 'Il faut le lien de ton profil, avec /profile/ suivi de chiffres.';
+    status.classList.add('error');
+    return;
+  }
+  status.textContent = 'Recherche du profil…';
+  try {
+    const user = await Deezer.profile.user(id);
+    store.set('deezerUser', user);
+    deezerPlaylists = null;
+    $('#opt-playlist').dataset.from = '';
+    store.set('source', 'dztop');
+    status.textContent = '';
+    enterSetup();
+  } catch (err) {
+    status.textContent = err.deezer ? 'Profil introuvable : vérifie le lien.' : `Deezer ne répond pas (${err.message}).`;
+    status.classList.add('error');
+  }
 }
 
 async function loadSource(force = false) {
@@ -198,7 +277,7 @@ async function loadSource(force = false) {
   store.set('source', source);
   status.classList.remove('error');
   status.textContent = 'Chargement…';
-  $('#playlist-pick').classList.toggle('hidden', source !== 'playlist');
+  $('#playlist-pick').classList.toggle('hidden', source !== 'playlist' && source !== 'dzplaylist');
   updateSourceFields(source);
   tracks = [];
   updateStartButton();
@@ -209,7 +288,23 @@ async function loadSource(force = false) {
 
   try {
     let list;
-    if (source === 'liked') {
+    if (source === 'history') {
+      list = historyTracks();
+      const h = store.get('history');
+      if (seq !== loadSeq) return;
+      tracks = list;
+      status.textContent = list.length
+        ? `${list.length} de tes titres les plus écoutés, sur ${h.streams.toLocaleString('fr-FR')} écoutes (${h.from}–${h.to}).`
+        : "Pas assez d'écoutes dans ton historique (il faut des titres écoutés au moins 3 fois).";
+      $('#opt-count').max = list.length;
+      updateStartButton();
+      return;
+    }
+    if (source.startsWith('dz')) {
+      list = await loadDeezerSource(source, force);
+      if (!list) { if (seq === loadSeq) status.textContent = 'Aucune playlist publique sur ce profil.'; return; }
+      if (!list.length) throw new Error("Deezer ne montre aucun titre. Si ton profil est privé, rends-le public dans Paramètres → Confidentialité");
+    } else if (source === 'liked') {
       list = !force && store.get('liked');
       if (!list?.length) {
         list = await step('titres likés', () => fetchAll('/me/tracks?limit=50', (it) => toTrack(it.track, it.added_at), progress));
@@ -218,7 +313,7 @@ async function loadSource(force = false) {
     } else if (source.startsWith('top:')) {
       list = await step('plus écoutés', () => fetchAll(`/me/top/tracks?limit=50&time_range=${source.slice(4)}`, (t) => toTrack(t, null), progress));
     } else {
-      if (force || !$('#opt-playlist').options.length) await step('liste de tes playlists', loadPlaylists);
+      if (force || !$('#opt-playlist').options.length || $('#opt-playlist').dataset.from !== 'spotify') await step('liste de tes playlists', loadPlaylists);
       const id = $('#opt-playlist').value;
       if (!id) {
         if (seq === loadSeq) status.textContent = "Aucune playlist à toi (Spotify ne donne accès qu'aux playlists que tu as créées ou où tu collabores).";
@@ -243,11 +338,50 @@ async function loadSource(force = false) {
 
 /* ---------- Champs à deviner ---------- */
 
-const ALL_FIELDS = ['artist', 'title', 'album', 'year', 'added'];
-const LABELS = { artist: 'Artiste', title: 'Titre', album: 'Album', year: 'Sortie', added: 'Ajouté en' };
+const ALL_FIELDS = ['artist', 'title', 'album', 'year', 'added', 'plays', 'discovered'];
+const LABELS = { artist: 'Artiste', title: 'Titre', album: 'Album', year: 'Sortie', added: 'Ajouté en', plays: 'Écoutes', discovered: 'Découvert en' };
 
 function selectedFields() {
-  return [...document.querySelectorAll('#opt-fields input')].filter((i) => i.checked && !i.disabled).map((i) => i.value);
+  return [...document.querySelectorAll('#opt-fields input')]
+    .filter((i) => i.checked && !i.closest('label').classList.contains('hidden'))
+    .map((i) => i.value);
+}
+
+/* ---------- Import de l'historique Spotify ---------- */
+
+function loadScript(src) {
+  return new Promise((ok, fail) => document.head.append(el('script', { src, onload: ok, onerror: () => fail(new Error('chargement impossible')) })));
+}
+
+async function importHistory(files) {
+  const status = $('#history-status');
+  status.classList.remove('error');
+  status.textContent = 'Lecture du fichier…';
+  try {
+    const lists = [];
+    for (const file of files) {
+      if (/\.zip$/i.test(file.name)) {
+        if (!window.JSZip) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+        const zip = await JSZip.loadAsync(file);
+        const entries = Object.values(zip.files).filter((f) => !f.dir && History.FILE_RE.test(f.name));
+        for (const [i, entry] of entries.entries()) {
+          status.textContent = `Lecture de ton historique… ${i + 1} / ${entries.length}`;
+          lists.push(JSON.parse(await entry.async('string')));
+        }
+      } else {
+        lists.push(JSON.parse(await file.text()));
+      }
+    }
+    const h = History.aggregate(lists);
+    if (!h.streams) throw new Error("aucune écoute de musique trouvée. Vérifie que c'est bien le fichier envoyé par Spotify");
+    store.set('history', h);
+    if (!store.get('history')) throw new Error('ton navigateur refuse de garder les données');
+    store.set('source', 'history');
+    enterSetup();
+  } catch (e) {
+    status.textContent = `Import impossible : ${e.message}.`;
+    status.classList.add('error');
+  }
 }
 
 /* ---------- Lecteur (Web Playback SDK, Premium requis) ---------- */
@@ -272,19 +406,8 @@ function initPlayer() {
       player.addListener('authentication_error', ({ message }) => reject(new Error('Authentification : ' + message)));
       player.addListener('account_error', () => reject(new Error('La lecture nécessite un compte Spotify Premium.')));
       player.addListener('player_state_changed', (s) => {
-        isPaused = !s || s.paused;
-        $('#stage').classList.toggle('playing', !isPaused);
-        $('#btn-pause').textContent = isPaused ? 'Lecture' : 'Pause';
         const cur = s?.track_window?.current_track;
-        if (!isPaused && pending && cur && (cur.uri === pending.uri || cur.linked_from?.uri === pending.uri)) {
-          $('#round-loading').classList.add('hidden');
-          clearTimeout(snippetTimer);
-          if (pending.snippetMs) {
-            snippetTimer = setTimeout(() => player.pause(), pending.snippetMs);
-            countdown('run', pending.snippetMs);
-          }
-          pending = null;
-        }
+        onPlayback(!s || s.paused, [cur?.uri, cur?.linked_from?.uri]);
       });
       player.connect();
     };
@@ -293,7 +416,37 @@ function initPlayer() {
 }
 
 let snippetTimer = null;
+let stallTimer = null;
 let pending = null;
+
+// History games play Deezer previews in an <audio> element; everything else plays through Spotify.
+const activePlayer = () => (game?.engine === 'deezer' ? Deezer.player : player);
+
+function onPlayback(paused, uris) {
+  isPaused = paused;
+  $('#stage').classList.toggle('playing', !paused);
+  $('#btn-pause').textContent = paused ? 'Lecture' : 'Pause';
+  if (paused || !pending || !uris.includes(pending.uri)) return;
+  $('#round-loading').classList.add('hidden');
+  clearTimeout(snippetTimer);
+  clearTimeout(stallTimer);
+  if (pending.snippetMs) {
+    snippetTimer = setTimeout(() => activePlayer().pause(), pending.snippetMs);
+    countdown('run', pending.snippetMs);
+  }
+  pending = null;
+}
+
+Deezer.player.onState((paused) => onPlayback(paused, [game?.tracks[game.index]?.uri]));
+
+// In sudden death and challenges, "Passer" would dodge hard tracks, so it only appears when a track can't play.
+const freeSkip = () => game.mode !== 'sudden' && !game.challenge;
+
+function unplayable(reason) {
+  if (!$('#result').classList.contains('hidden')) return;
+  $('#round-error').textContent = `Lecture impossible (${reason}). Clique sur « Passer ».`;
+  $('#btn-skip').classList.remove('hidden');
+}
 
 // state: 'ready' (full bar, waiting for sound), 'run' (draining over ms), 'off' (hidden)
 function countdown(state, ms = 0) {
@@ -319,14 +472,21 @@ async function playFrom(uri, positionMs, snippetMs) {
   pending = { uri, snippetMs };
   $('#round-loading').classList.remove('hidden');
   countdown(snippetMs ? 'ready' : 'off');
-  if (snippetMs) snippetTimer = setTimeout(() => player.pause(), snippetMs + 8000);
+  if (snippetMs) snippetTimer = setTimeout(() => activePlayer().pause(), snippetMs + 8000);
+  clearTimeout(stallTimer);
+  stallTimer = setTimeout(() => { if (pending?.uri === uri) unplayable('le son ne démarre pas'); }, 10000);
   try {
-    await api(`/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
-      method: 'PUT',
-      body: JSON.stringify({ uris: [uri], position_ms: positionMs }),
-    });
+    if (game.engine === 'deezer') {
+      await Deezer.player.play(currentTrack().preview, positionMs / 1000);
+    } else {
+      await api(`/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ uris: [uri], position_ms: positionMs }),
+      });
+    }
   } catch (e) {
     pending = null;
+    clearTimeout(stallTimer);
     $('#round-loading').classList.add('hidden');
     countdown('off');
     throw e;
@@ -336,6 +496,7 @@ async function playFrom(uri, positionMs, snippetMs) {
 function setVolume(v) {
   store.set('volume', v);
   player?.setVolume(v / 100);
+  Deezer.player.setVolume(v / 100);
 }
 
 /* ---------- Partie ---------- */
@@ -343,7 +504,8 @@ function setVolume(v) {
 let game = null;
 
 function updateStartButton() {
-  $('#btn-start').disabled = !(tracks.length && deviceId && selectedFields().length);
+  const needsSpotify = !onDeezer($('#opt-source').value);
+  $('#btn-start').disabled = !(tracks.length && (deviceId || !needsSpotify) && selectedFields().length);
   $('#btn-challenge').disabled = !deviceId;
 }
 
@@ -359,8 +521,8 @@ function shuffle(arr) {
 const TOP_NAMES = { short_term: 'Top 4 semaines', medium_term: 'Top 6 mois', long_term: 'Top de toujours' };
 
 function beginGame(settings) {
-  player.activateElement();
-  game = { index: 0, results: [], pool: [], challenge: null, fixedStarts: false, ...settings };
+  game = { index: 0, results: [], pool: [], challenge: null, fixedStarts: false, engine: 'spotify', ...settings };
+  activePlayer().activateElement();
   show('screen-round');
   startRound();
 }
@@ -374,7 +536,8 @@ function startGame() {
   beginGame({
     mode,
     kind,
-    detail: kind === 'top' ? TOP_NAMES[source.slice(4)] : kind === 'playlist' ? $('#opt-playlist').selectedOptions[0]?.textContent.replace(/ \([^)]*\)$/, '') : '',
+    engine: onDeezer(kind) ? 'deezer' : 'spotify',
+    detail: kind === 'top' ? TOP_NAMES[source.slice(4)] : kind === 'playlist' || kind === 'dzplaylist' ? $('#opt-playlist').selectedOptions[0]?.textContent.replace(/ \([^)]*\)$/, '') : '',
     fields: selectedFields(),
     addedNames: ADDED_NAMES[kind] || ["Année d'ajout", 'Ajouté en'],
     tracks: pool.slice(0, count),
@@ -409,7 +572,13 @@ function currentTrack() { return game.tracks[game.index]; }
 
 async function startRound() {
   const t = currentTrack();
-  if (!game.fixedStarts) t.startMs = game.randomStart ? Math.floor(t.duration * (0.2 + Math.random() * 0.4)) : 0;
+  if (!game.fixedStarts) {
+    // Deezer previews last 30 s: pick a start that still leaves the whole snippet to hear.
+    const room = game.engine === 'deezer' ? Math.max(0, 30000 - (game.snippetMs || 30000)) : 0;
+    t.startMs = !game.randomStart ? 0
+      : game.engine === 'deezer' ? Math.floor(Math.random() * room)
+      : Math.floor(t.duration * (0.2 + Math.random() * 0.4));
+  }
   const sudden = game.mode === 'sudden';
   const num = String(game.index + 1).padStart(2, '0');
   $('#round-num').textContent = sudden ? `${game.index + 1}` : `${game.index + 1} / ${game.tracks.length}`;
@@ -433,7 +602,7 @@ async function startRound() {
   }
   $('#guess-form').classList.remove('hidden');
   $('#result').classList.add('hidden');
-  $('#btn-skip').classList.remove('hidden');
+  $('#btn-skip').classList.toggle('hidden', !freeSkip());
   $('#guess-form [data-field]:not(.hidden) input').focus();
   await replay();
 }
@@ -441,10 +610,21 @@ async function startRound() {
 async function replay() {
   const t = currentTrack();
   $('#round-error').textContent = '';
+  if (game.engine === 'deezer') {
+    // Instant when prefetched; otherwise finds the preview (history) or the release year (profiles).
+    $('#round-loading').classList.remove('hidden');
+    const found = await Deezer.resolve(t);
+    if (currentTrack() !== t) return;
+    // Not the player's fault: a track missing on Deezer is replaced silently, in every mode.
+    if (!found) { skip(); return; }
+    Deezer.resolve(game.tracks[game.index + 1]);
+  }
+  const snippet = () => ($('#result').classList.contains('hidden') ? game.snippetMs : 0);
   try {
-    await playFrom(t.uri, t.startMs, $('#result').classList.contains('hidden') ? game.snippetMs : 0);
+    await playFrom(t.uri, t.startMs, snippet());
   } catch (e) {
-    $('#round-error').textContent = `Lecture impossible (${e.message}). Clique sur « Passer ».`;
+    if (game.engine !== 'deezer' || currentTrack() !== t || !(await Deezer.refresh(t)) || currentTrack() !== t) { unplayable(e.message); return; }
+    try { await playFrom(t.uri, t.startMs, snippet()); } catch (e2) { unplayable(e2.message); }
   }
 }
 
@@ -466,6 +646,7 @@ function submitGuess(e) {
   const guess = {
     artist: $('#g-artist').value, title: $('#g-title').value, album: $('#g-album').value,
     year: $('#g-year').value, added: $('#g-added').value,
+    plays: $('#g-plays').value, discovered: $('#g-discovered').value,
   };
   const all = Scoring.round(guess, t);
   const pts = Object.fromEntries(game.fields.map((k) => [k, all[k]]));
@@ -481,6 +662,7 @@ function submitGuess(e) {
   const truth = {
     artist: t.artists.join(', '), title: t.name, album: t.album,
     year: t.releaseYear ?? '?', added: t.addedYear ?? '?',
+    plays: `${t.plays} écoute${t.plays > 1 ? 's' : ''}`, discovered: t.firstYear ?? '?',
   };
   $('#r-max').textContent = sudden ? `sur ${max} · ${survived ? 'la série continue' : 'fin de la série'}` : `sur ${max}`;
   $('#r-table').replaceChildren(...game.fields.map((k, i) => el('tr', { style: `--i: ${i}` }, [
@@ -509,7 +691,7 @@ function submitGuess(e) {
 
   clearTimeout(snippetTimer);
   if (pending) pending.snippetMs = 0;
-  if (isPaused) player.resume();
+  if (isPaused) activePlayer().resume();
 }
 
 function next() {
@@ -521,9 +703,10 @@ function next() {
 
 function endGame() {
   clearTimeout(snippetTimer);
+  clearTimeout(stallTimer);
   pending = null;
   $('#round-loading').classList.add('hidden');
-  player.pause();
+  activePlayer().pause();
   const sudden = game.mode === 'sudden';
   const total = totalPoints();
   const max = game.results.length * game.fields.length * 10;
@@ -580,6 +763,21 @@ async function prepareShare(score, max, grid) {
   btn.disabled = true;
   $('#share-link').value = '';
   $('#share-feedback').textContent = '';
+  $('#share-link').classList.toggle('hidden', game.engine === 'deezer');
+  // Deezer games can't be replayed by someone else yet: share the result without a challenge link.
+  if (game.engine === 'deezer') {
+    const source = {
+      history: "Mon historique d'écoute",
+      dztop: 'Mon top Deezer',
+      dzliked: 'Mes coups de cœur Deezer',
+      dzplaylist: `Playlist « ${game.detail} »`,
+    }[game.kind];
+    const head = game.mode === 'sudden' ? `Blindtest · Mort subite · ${source} · série de ${score}` : `Blindtest · ${source} · ${score}/${max}`;
+    game.shareText = `${head}\n${Challenge.squares(grid)}`;
+    btn.disabled = false;
+    $('#share-feedback').textContent = 'Les défis sur Deezer arrivent bientôt : pour l\'instant, tu partages ton score.';
+    return;
+  }
   try {
     const name = await myName();
     const sudden = game.mode === 'sudden';
@@ -667,6 +865,43 @@ function updateModeHint() {
 
 /* ---------- Démarrage ---------- */
 
+let playerStarted = false;
+
+// Each source needs its own way in: a Spotify login, an imported history or a Deezer profile.
+function enterSetup() {
+  const loggedIn = !!store.get('token');
+  const hasHistory = !!store.get('history');
+  const dzUser = store.get('deezerUser');
+  const available = (v) => (v === 'history' ? hasHistory : v.startsWith('dz') ? !!dzUser : loggedIn);
+  const options = [...$('#opt-source').options];
+  for (const o of options) {
+    o.disabled = !available(o.value);
+    o.hidden = o.disabled;
+  }
+  if (!$('#opt-source').value || $('#opt-source').selectedOptions[0].disabled) {
+    $('#opt-source').value = options.find((o) => !o.disabled)?.value || 'liked';
+  }
+  if (dzUser) {
+    const who = dzUser.name;
+    options.find((o) => o.value === 'dztop').textContent = `Deezer : le top de ${who}`;
+    options.find((o) => o.value === 'dzliked').textContent = `Deezer : les coups de cœur de ${who}`;
+    options.find((o) => o.value === 'dzplaylist').textContent = `Deezer : une playlist de ${who}`;
+  }
+  $('#btn-logout').classList.toggle('hidden', !loggedIn);
+  $('#btn-reload').classList.toggle('hidden', !loggedIn && !dzUser);
+  $('#btn-home').textContent = 'Changer de source';
+  show('screen-setup');
+  loadSource();
+  if (!loggedIn) {
+    $('#player-status').textContent = 'Son : extraits Deezer de 30 secondes, sans compte.';
+  } else if (!playerStarted) {
+    playerStarted = true;
+    initPlayer()
+      .then(() => { $('#player-status').textContent = 'Lecteur prêt.'; updateStartButton(); })
+      .catch((e) => { $('#player-status').textContent = e.message; $('#player-status').classList.add('error'); });
+  }
+}
+
 async function main() {
   $('#redirect-uri').textContent = REDIRECT_URI;
   $('#client-id').value = store.get('clientId', '');
@@ -679,11 +914,19 @@ async function main() {
   $('#btn-logout-denied').onclick = logout;
   $('#btn-retry').onclick = () => { store.del('liked'); location.reload(); };
   $('#btn-reload').onclick = () => loadSource(true);
+  $('#btn-home').onclick = () => show('screen-login');
+  $('#history-file').onchange = (e) => { if (e.target.files.length) importHistory([...e.target.files]); };
+  $('#deezer-form').onsubmit = connectDeezer;
+  $('#deezer-profile').value = store.get('deezerUser') ? `deezer.com/profile/${store.get('deezerUser').id}` : '';
   $('#opt-source').value = store.get('source', 'liked');
-  if (!$('#opt-source').value) $('#opt-source').value = 'liked';
   $('#opt-source').onchange = () => loadSource();
   $('#opt-playlist').onchange = () => loadSource();
   const savedFields = store.get('fields', ALL_FIELDS);
+  if (!store.get('fieldsHistory')) {
+    savedFields.push('plays', 'discovered');
+    store.set('fields', savedFields);
+    store.set('fieldsHistory', true);
+  }
   const fieldBoxes = [...document.querySelectorAll('#opt-fields input')];
   for (const box of fieldBoxes) {
     box.checked = savedFields.includes(box.value);
@@ -694,10 +937,11 @@ async function main() {
   }
   $('#btn-start').onclick = startGame;
   $('#btn-replay').onclick = replay;
-  $('#btn-pause').onclick = () => player.togglePlay();
+  $('#btn-pause').onclick = () => activePlayer().togglePlay();
   $('#btn-skip').onclick = skip;
   $('#btn-next').onclick = next;
   $('#btn-again').onclick = () => show('screen-setup');
+  Deezer.player.setVolume(store.get('volume', 70) / 100);
   $('#btn-share').onclick = shareGame;
   $('#btn-challenge').onclick = startChallenge;
   $('#btn-challenge-skip').onclick = dropChallenge;
@@ -719,13 +963,8 @@ async function main() {
     store.del('token');
     $('#login-error').textContent = "Nouvelle version : reconnecte-toi pour autoriser l'accès à tes playlists et à tes plus écoutés.";
   }
-  if (!store.get('token')) { show('screen-login'); return; }
-
-  show('screen-setup');
-  loadSource();
-  initPlayer()
-    .then(() => { $('#player-status').textContent = 'Lecteur prêt.'; updateStartButton(); })
-    .catch((e) => { $('#player-status').textContent = e.message; $('#player-status').classList.add('error'); });
+  if (!store.get('token') && !store.get('history') && !store.get('deezerUser')) { show('screen-login'); return; }
+  enterSetup();
 }
 
 main();

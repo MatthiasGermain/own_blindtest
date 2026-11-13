@@ -93,6 +93,12 @@
   .fields label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
   .fields label.off { opacity: .4; cursor: not-allowed; background: transparent !important; color: var(--muted) !important; border-color: var(--line) !important; }
 
+  input[type="file"] { padding: 10px; cursor: pointer; }
+  input[type="file"]::file-selector-button { font: 900 14px var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 999px; padding: 7px 16px; margin-right: 12px; cursor: pointer; }
+  .howto { margin-top: 14px; font-size: 13px; }
+  .howto summary { cursor: pointer; color: var(--text); text-decoration: underline; text-underline-offset: 3px; margin-bottom: 10px; }
+  .or { display: flex; align-items: center; gap: 12px; margin: 28px 0 20px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .14em; }
+  .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
   .challenge { border: 1px solid var(--accent); background: rgba(255, 102, 20, .08); padding: 18px; margin-bottom: 24px; }
   .challenge-title { font-size: 26px; line-height: 1.1; margin: 0 0 6px; color: var(--text); }
   .challenge .actions { margin-top: 14px; }
@@ -173,12 +179,45 @@
 <main>
   <header>
     <h1 class="display">Blindtest</h1>
-    <p class="sub">Ta musique Spotify, à l'aveugle</p>
+    <p class="sub">Ta musique, à l'aveugle</p>
   </header>
 
   <section id="screen-login" class="card screen hidden">
     <div id="login-challenge" class="challenge hidden"><p class="challenge-title display" id="login-challenge-title"></p><p class="status" style="margin:0">Connecte-toi pour relever le défi.</p></div>
-    <h2>Connexion</h2>
+    <h2>Ton historique, en blindtest</h2>
+    <p>Dépose les données d'écoute que Spotify t'envoie : chaque titre, combien de fois tu l'as écouté, depuis quand. Tout est analysé sur ton appareil, rien n'est envoyé.</p>
+    <label for="history-file">Fichier de données Spotify (.zip ou .json)</label>
+    <input id="history-file" type="file" accept=".zip,.json,application/zip,application/json" multiple>
+    <p id="history-status" class="status"></p>
+    <details class="howto">
+      <summary>Comment obtenir ce fichier ?</summary>
+      <ol>
+        <li>Sur spotify.com, ouvre <em>Compte</em> → <em>Confidentialité</em>.</li>
+        <li>Coche <strong>Historique de streaming étendu</strong>, puis demande les données.</li>
+        <li>Confirme l'e-mail. Spotify envoie le fichier sous quelques jours (jusqu'à 30).</li>
+        <li>Dépose ici le ZIP reçu, sans le décompresser.</li>
+      </ol>
+    </details>
+    <div class="or"><span>ou</span></div>
+    <h2>Avec ton profil Deezer</h2>
+    <p>Colle le lien de ton profil : on joue sur ton top, tes coups de cœur et tes playlists. Pas de mot de passe.</p>
+    <form id="deezer-form">
+      <label for="deezer-profile">Lien de ton profil Deezer</label>
+      <input id="deezer-profile" placeholder="deezer.com/fr/profile/123456789" autocomplete="off" spellcheck="false" inputmode="url">
+      <div class="actions"><button id="btn-deezer" type="submit">Jouer avec Deezer</button></div>
+    </form>
+    <p id="deezer-status" class="status"></p>
+    <details class="howto">
+      <summary>Où trouver ce lien ?</summary>
+      <ol>
+        <li>Sur <em>deezer.com</em>, connecte-toi et clique sur ta photo puis <em>Mon profil</em>.</li>
+        <li>Copie l'adresse de la page : elle contient <code>/profile/</code> suivi de chiffres.</li>
+        <li>Si rien ne s'affiche ensuite : dans <em>Paramètres</em> → <em>Confidentialité</em>, rends ton profil public.</li>
+      </ol>
+    </details>
+    <div class="or"><span>ou</span></div>
+    <h2>Avec ton compte Spotify</h2>
+    <p class="status" style="margin-top:-12px">Réservé aux testeurs ajoutés par l'organisateur.</p>
     <div id="login-setup">
       <ol>
         <li>Crée une app sur <code>developer.spotify.com/dashboard</code> (API : <em>Web API</em> + <em>Web Playback SDK</em>).</li>
@@ -189,7 +228,7 @@
       <input id="client-id" autocomplete="off" spellcheck="false">
     </div>
     <p id="login-hint" class="status hidden">Il faut un compte Spotify Premium, ajouté à l'app par l'organisateur. À ouvrir dans Chrome ou Edge sur ordinateur.</p>
-    <div class="actions"><button id="btn-login">Se connecter à Spotify</button></div>
+    <div class="actions"><button id="btn-login" class="ghost">Se connecter à Spotify</button></div>
     <p id="login-error" class="status error"></p>
   </section>
 
@@ -211,6 +250,10 @@
     <p id="mode-hint" class="status hidden">Tu continues tant que tu trouves l'artiste ou le titre. Une erreur et c'est fini.</p>
     <label for="opt-source">Titres à deviner</label>
     <select id="opt-source">
+      <option value="history">Mon historique d'écoute</option>
+      <option value="dztop">Deezer : mon top</option>
+      <option value="dzliked">Deezer : mes coups de cœur</option>
+      <option value="dzplaylist">Deezer : une de mes playlists</option>
       <option value="liked">Mes titres likés</option>
       <option value="top:short_term">Mes plus écoutés : 4 dernières semaines</option>
       <option value="top:medium_term">Mes plus écoutés : 6 derniers mois</option>
@@ -225,11 +268,13 @@
     <p id="player-status" class="status">Initialisation du lecteur…</p>
     <label>Champs à deviner</label>
     <div id="opt-fields" class="fields">
-      <label><input type="checkbox" value="artist"> Artiste</label>
-      <label><input type="checkbox" value="title"> Titre</label>
-      <label><input type="checkbox" value="album"> Album</label>
-      <label><input type="checkbox" value="year"> Année de sortie</label>
-      <label><input type="checkbox" value="added"> <span id="field-added-name">Année d'ajout</span></label>
+      <label data-sources="history liked top playlist dztop dzliked dzplaylist"><input type="checkbox" value="artist"> Artiste</label>
+      <label data-sources="history liked top playlist dztop dzliked dzplaylist"><input type="checkbox" value="title"> Titre</label>
+      <label data-sources="history liked top playlist dztop dzliked dzplaylist"><input type="checkbox" value="album"> Album</label>
+      <label data-sources="liked top playlist dztop dzliked dzplaylist"><input type="checkbox" value="year"> Année de sortie</label>
+      <label data-sources="liked playlist dzliked dzplaylist"><input type="checkbox" value="added"> <span id="field-added-name">Année d'ajout</span></label>
+      <label data-sources="history"><input type="checkbox" value="plays"> Nombre d'écoutes</label>
+      <label data-sources="history"><input type="checkbox" value="discovered"> Année de découverte</label>
     </div>
     <div class="row">
       <div id="count-wrap">
@@ -254,6 +299,7 @@
     <div class="actions">
       <button id="btn-start" disabled>Lancer le blindtest</button>
       <button id="btn-reload" class="ghost">Recharger</button>
+      <button id="btn-home" class="ghost">Changer d'historique</button>
       <button id="btn-logout" class="ghost">Déconnexion</button>
     </div>
   </section>
@@ -304,6 +350,10 @@
           <div data-field="year"><label for="g-year">Année de sortie</label><input id="g-year" inputmode="numeric" maxlength="4"></div>
           <div data-field="added"><label for="g-added" id="label-added">Année d'ajout</label><input id="g-added" inputmode="numeric" maxlength="4"></div>
         </div>
+        <div class="row">
+          <div data-field="plays"><label for="g-plays">Nombre d'écoutes</label><input id="g-plays" inputmode="numeric" maxlength="6"></div>
+          <div data-field="discovered"><label for="g-discovered">Année de découverte</label><input id="g-discovered" inputmode="numeric" maxlength="4"></div>
+        </div>
         <div class="actions"><button type="submit">Valider</button></div>
       </form>
       <div id="result" class="hidden">
@@ -336,6 +386,8 @@
 <script src="config.js"></script>
 <script src="scoring.js"></script>
 <script src="challenge.js"></script>
+<script src="history.js"></script>
+<script src="deezer.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
