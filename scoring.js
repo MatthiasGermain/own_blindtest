@@ -57,16 +57,6 @@ const Scoring = (() => {
     return d === 0 ? 10 : d === 1 ? 6 : d <= 3 ? 3 : 0;
   }
 
-  // Play counts are judged on relative error, with a small absolute margin for rarely played tracks.
-  function plays(guess, actual) {
-    const g = parseInt(guess, 10);
-    if (!Number.isFinite(g) || g < 0 || !actual) return 0;
-    const d = Math.abs(g - actual);
-    if (actual < 20) return d <= 1 ? 10 : d <= 3 ? 6 : d <= 6 ? 3 : 0;
-    const e = d / actual;
-    return e <= 0.1 ? 10 : e <= 0.25 ? 6 : e <= 0.5 ? 3 : 0;
-  }
-
   function round(guess, track) {
     return {
       artist: artists(guess.artist, track.artists),
@@ -74,12 +64,11 @@ const Scoring = (() => {
       album: text(guess.album, [track.album]),
       year: year(guess.year, track.releaseYear),
       added: year(guess.added, track.addedYear),
-      plays: plays(guess.plays, track.plays),
       discovered: year(guess.discovered, track.firstYear),
     };
   }
 
-  return { norm, clean, similarity, text, artists, year, plays, round };
+  return { norm, clean, similarity, text, artists, year, round };
 })();
 
 if (typeof module !== 'undefined') module.exports = Scoring;

@@ -43,7 +43,7 @@ const Challenge = (() => {
 
   async function encode(c) {
     const payload = {
-      v: 1, n: c.name, o: c.owner, k: c.kind, src: c.source, m: c.mode, f: c.fields,
+      v: 1, n: c.name, o: c.owner, k: c.kind, src: c.source, m: c.mode, a: c.answers === 'choice' ? 'c' : 't', f: c.fields,
       s: c.snippetMs, sc: c.score, mx: c.max, g: c.grid.join(''), t: c.tracks.map(packTrack),
     };
     return toB64(await pipe(new TextEncoder().encode(JSON.stringify(payload)), new CompressionStream('deflate-raw')));
@@ -62,6 +62,7 @@ const Challenge = (() => {
       kind: ['liked', 'playlist', 'top'].includes(raw.k) ? raw.k : 'top',
       source: str(raw.src, 80),
       mode: raw.m === 'sudden' ? 'sudden' : 'classic',
+      answers: raw.a === 'c' ? 'choice' : 'type',
       fields: fields.length ? fields : ['artist', 'title'],
       snippetMs: int(raw.s, 0, 60000),
       score: int(raw.sc, 0, 100000),

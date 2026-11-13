@@ -205,7 +205,6 @@ function historyTracks() {
     name: t.n,
     artists: [t.a],
     album: t.al || '',
-    plays: t.p,
     firstYear: t.f,
     cover: '',
     duration: 30000,
@@ -338,8 +337,119 @@ async function loadSource(force = false) {
 
 /* ---------- Champs à deviner ---------- */
 
-const ALL_FIELDS = ['artist', 'title', 'album', 'year', 'added', 'plays', 'discovered'];
-const LABELS = { artist: 'Artiste', title: 'Titre', album: 'Album', year: 'Sortie', added: 'Ajouté en', plays: 'Écoutes', discovered: 'Découvert en' };
+const ALL_FIELDS = ['artist', 'title', 'album', 'year', 'added', 'discovered'];
+const LABELS = { artist: 'Artiste', title: 'Titre', album: 'Album', year: 'Sortie', added: 'Ajouté en', discovered: 'Découvert en' };
+
+/* ---------- Réponses à choisir ---------- */
+
+const TEXT_FIELDS = ['artist', 'title', 'album'];
+const YEAR_PROPS = { year: 'releaseYear', added: 'addedYear', discovered: 'firstYear' };
+const choiceMode = () => game?.answers === 'choice';
+const sameText = (a, b) => Scoring.norm(a) === Scoring.norm(b);
+
+function answerText(field, t) {
+  if (field === 'artist') return t.artists.join(', ');
+  const v = field === 'title' ? t.name : t.album;
+  return Scoring.clean(v) || v || '';
+}
+
+// Wrong answers come from the player's own music, and from the same artist first: that is what keeps it hard.
+function buildOptions(field, t) {
+  const right = answerText(field, t);
+  if (!right) return null;
+  const byArtist = (x) => x !== t && x.artists.some((a) => t.artists.some((b) => sameText(a, b)));
+  const others = game.library.filter((x) => x !== t && !byArtist(x));
+  const pool = field === 'artist'
+    ? shuffle(others).map((x) => x.artists[0])
+    : [...shuffle(game.library.filter(byArtist)), ...shuffle(others)].map((x) => answerText(field, x));
+  const seen = new Set([Scoring.norm(right)]);
+  const wrong = [];
+  for (const c of pool) {
+    if (wrong.length === 3) break;
+    const k = Scoring.norm(c);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    wrong.push(c);
+  }
+  return shuffle([right, ...wrong]);
+}
+
+function nextOpenField(from) {
+  const open = [...document.querySelectorAll('#guess-form [data-field]:not(.hidden)')]
+    .filter((d) => TEXT_FIELDS.includes(d.dataset.field) && !d.querySelector('input.typed').value);
+  return open.find((d) => d.compareDocumentPosition(from) & Node.DOCUMENT_POSITION_PRECEDING) || open[0];
+}
+
+function pick(field, value, container) {
+  $(`#g-${field}`).value = value;
+  for (const b of container.children) b.setAttribute('aria-pressed', String(b.textContent === value));
+  const next = nextOpenField(container);
+  const firstYear = document.querySelector('#guess-form [data-field]:not(.hidden) .picker');
+  // With only picks to make, the last tap validates; with years to set, go to the first one.
+  if (next) next.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  else if (!firstYear) $('#guess-form').requestSubmit();
+  else firstYear.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function renderChoices(t) {
+  t.options ??= {};
+  for (const field of TEXT_FIELDS) {
+    if (!game.fields.includes(field)) continue;
+    t.options[field] ??= buildOptions(field, t);
+    const box = document.querySelector(`.choices[data-for="${field}"]`);
+    const chosen = $(`#g-${field}`).value;
+    box.replaceChildren(...(t.options[field] || []).map((o) => el('button', {
+      type: 'button', textContent: o, onclick: () => pick(field, o, box),
+    }, [])));
+    for (const b of box.children) b.setAttribute('aria-pressed', String(!!chosen && b.textContent === chosen));
+    if (!t.options[field]) box.append(el('p', { className: 'status', textContent: 'Propositions en chargement…' }));
+  }
+}
+
+// Years are picked on a slider, still scored by how close they are. Nothing counts until it is touched.
+function resetPickers() {
+  const now = new Date().getFullYear();
+  for (const [field, prop] of Object.entries(YEAR_PROPS)) {
+    const p = document.querySelector(`.picker[data-for="${field}"]`);
+    const vals = game.library.map((x) => x[prop]).filter(Boolean).sort((a, b) => a - b);
+    const range = p.querySelector('input');
+    range.min = Math.min(vals[0] ?? 1970, now - 30) - 2;
+    range.max = Math.min(now, (vals.at(-1) ?? now) + 2);
+    range.value = vals[Math.floor(vals.length / 2)] ?? now - 10;
+    p.querySelector('output').textContent = '?';
+    $(`#g-${field}`).value = '';
+  }
+}
+
+function setYear(field, value) {
+  const p = document.querySelector(`.picker[data-for="${field}"]`);
+  const range = p.querySelector('input');
+  range.value = value;
+  $(`#g-${field}`).value = range.value;
+  p.querySelector('output').textContent = range.value;
+}
+
+function setupChoiceUi() {
+  for (const field of TEXT_FIELDS) {
+    const box = el('div', { className: 'choices' });
+    box.dataset.for = field;
+    $(`#g-${field}`).after(box);
+  }
+  for (const field of Object.keys(YEAR_PROPS)) {
+    const range = el('input', { type: 'range', step: 1, ariaLabel: 'Année' });
+    // The first tap shows the starting year; the next ones move it.
+    const step = (d) => setYear(field, Number(range.value) + ($(`#g-${field}`).value ? d : 0));
+    const p = el('div', { className: 'picker' }, [
+      el('button', { type: 'button', textContent: '−', ariaLabel: 'Un an plus tôt', onclick: () => step(-1) }),
+      el('output', { textContent: '?' }),
+      el('button', { type: 'button', textContent: '+', ariaLabel: 'Un an plus tard', onclick: () => step(1) }),
+      range,
+    ]);
+    p.dataset.for = field;
+    range.oninput = () => setYear(field, range.value);
+    $(`#g-${field}`).after(p);
+  }
+}
 
 function selectedFields() {
   return [...document.querySelectorAll('#opt-fields input')]
@@ -521,7 +631,8 @@ function shuffle(arr) {
 const TOP_NAMES = { short_term: 'Top 4 semaines', medium_term: 'Top 6 mois', long_term: 'Top de toujours' };
 
 function beginGame(settings) {
-  game = { index: 0, results: [], pool: [], challenge: null, fixedStarts: false, engine: 'spotify', ...settings };
+  game = { index: 0, results: [], pool: [], challenge: null, fixedStarts: false, engine: 'spotify', answers: 'type', ...settings };
+  game.library ??= game.tracks;
   activePlayer().activateElement();
   show('screen-round');
   startRound();
@@ -539,6 +650,8 @@ function startGame() {
     engine: onDeezer(kind) ? 'deezer' : 'spotify',
     detail: kind === 'top' ? TOP_NAMES[source.slice(4)] : kind === 'playlist' || kind === 'dzplaylist' ? $('#opt-playlist').selectedOptions[0]?.textContent.replace(/ \([^)]*\)$/, '') : '',
     fields: selectedFields(),
+    answers: $('#opt-answers').value,
+    library: tracks,
     addedNames: ADDED_NAMES[kind] || ["Année d'ajout", 'Ajouté en'],
     tracks: pool.slice(0, count),
     pool: mode === 'sudden' ? [] : pool.slice(count),
@@ -557,6 +670,7 @@ function startChallenge() {
     mode: c.mode,
     kind: c.kind,
     fields: c.fields,
+    answers: c.answers,
     addedNames,
     tracks: c.tracks.map((t) => ({ ...t })),
     snippetMs: c.snippetMs,
@@ -600,10 +714,13 @@ async function startRound() {
   for (const d of document.querySelectorAll('#guess-form [data-field]')) {
     d.classList.toggle('hidden', !game.fields.includes(d.dataset.field));
   }
+  $('#guess-form').classList.toggle('choice', choiceMode());
+  if (choiceMode()) { resetPickers(); renderChoices(t); }
   $('#guess-form').classList.remove('hidden');
   $('#result').classList.add('hidden');
   $('#btn-skip').classList.toggle('hidden', !freeSkip());
-  $('#guess-form [data-field]:not(.hidden) input').focus();
+  // No keyboard popping up when answers are picked.
+  if (!choiceMode()) $('#guess-form [data-field]:not(.hidden) input').focus();
   await replay();
 }
 
@@ -617,6 +734,8 @@ async function replay() {
     if (currentTrack() !== t) return;
     // Not the player's fault: a track missing on Deezer is replaced silently, in every mode.
     if (!found) { skip(); return; }
+    // The album of a history track is only known once Deezer has found it.
+    if (choiceMode() && $('#result').classList.contains('hidden')) renderChoices(t);
     Deezer.resolve(game.tracks[game.index + 1]);
   }
   const snippet = () => ($('#result').classList.contains('hidden') ? game.snippetMs : 0);
@@ -646,9 +765,11 @@ function submitGuess(e) {
   const guess = {
     artist: $('#g-artist').value, title: $('#g-title').value, album: $('#g-album').value,
     year: $('#g-year').value, added: $('#g-added').value,
-    plays: $('#g-plays').value, discovered: $('#g-discovered').value,
+    discovered: $('#g-discovered').value,
   };
   const all = Scoring.round(guess, t);
+  // A picked answer is right or wrong: no partial credit for a name that merely looks alike.
+  if (choiceMode()) for (const f of TEXT_FIELDS) all[f] = guess[f] && sameText(guess[f], answerText(f, t)) ? 10 : 0;
   const pts = Object.fromEntries(game.fields.map((k) => [k, all[k]]));
   const total = Object.values(pts).reduce((a, b) => a + b, 0);
   const max = game.fields.length * 10;
@@ -662,7 +783,7 @@ function submitGuess(e) {
   const truth = {
     artist: t.artists.join(', '), title: t.name, album: t.album,
     year: t.releaseYear ?? '?', added: t.addedYear ?? '?',
-    plays: `${t.plays} écoute${t.plays > 1 ? 's' : ''}`, discovered: t.firstYear ?? '?',
+    discovered: t.firstYear ?? '?',
   };
   $('#r-max').textContent = sudden ? `sur ${max} · ${survived ? 'la série continue' : 'fin de la série'}` : `sur ${max}`;
   $('#r-table').replaceChildren(...game.fields.map((k, i) => el('tr', { style: `--i: ${i}` }, [
@@ -758,6 +879,9 @@ function sourceLabel(name) {
   return `Likés de ${name}`;
 }
 
+// Picked and typed scores are never compared: the share says which one it was.
+const answersTag = () => (game.answers === 'choice' ? ' · Choix' : ' · Saisie');
+
 async function prepareShare(score, max, grid) {
   const btn = $('#btn-share');
   btn.disabled = true;
@@ -772,7 +896,7 @@ async function prepareShare(score, max, grid) {
       dzliked: 'Mes coups de cœur Deezer',
       dzplaylist: `Playlist « ${game.detail} »`,
     }[game.kind];
-    const head = game.mode === 'sudden' ? `Blindtest · Mort subite · ${source} · série de ${score}` : `Blindtest · ${source} · ${score}/${max}`;
+    const head = game.mode === 'sudden' ? `Blindtest${answersTag()} · Mort subite · ${source} · série de ${score}` : `Blindtest${answersTag()} · ${source} · ${score}/${max}`;
     game.shareText = `${head}\n${Challenge.squares(grid)}`;
     btn.disabled = false;
     $('#share-feedback').textContent = 'Les défis sur Deezer arrivent bientôt : pour l\'instant, tu partages ton score.';
@@ -791,6 +915,7 @@ async function prepareShare(score, max, grid) {
       kind: game.kind,
       source,
       mode: game.mode,
+      answers: game.answers,
       fields: game.fields,
       snippetMs: game.snippetMs,
       score,
@@ -799,7 +924,7 @@ async function prepareShare(score, max, grid) {
       tracks: [...played, ...extra],
     });
     const url = `${REDIRECT_URI}#c=${code}`;
-    const head = sudden ? `Blindtest · Mort subite · ${source} · série de ${score}` : `Blindtest · ${source} · ${score}/${max}`;
+    const head = sudden ? `Blindtest${answersTag()} · Mort subite · ${source} · série de ${score}` : `Blindtest${answersTag()} · ${source} · ${score}/${max}`;
     game.shareText = `${head}\n${Challenge.squares(grid)}\nÀ toi de battre ça : ${url}`;
     $('#share-link').value = url;
     btn.disabled = false;
@@ -830,7 +955,8 @@ function showChallenge() {
   const fields = c.fields.map((k) => (k === 'added' ? "année d'ajout" : LABELS[k].toLowerCase())).join(', ');
   $('#login-challenge-title').textContent = `${c.name} te défie !`;
   $('#challenge-title').textContent = `${c.name} te défie !`;
-  $('#challenge-desc').textContent = `${what}. À deviner : ${fields}.`;
+  const how = c.answers === 'choice' ? 'réponses à choisir' : 'réponses à taper';
+  $('#challenge-desc').textContent = `${what}. À deviner : ${fields}, ${how}.`;
   $('#login-challenge').classList.remove('hidden');
   $('#challenge-box').classList.remove('hidden');
 }
@@ -923,7 +1049,7 @@ async function main() {
   $('#opt-playlist').onchange = () => loadSource();
   const savedFields = store.get('fields', ALL_FIELDS);
   if (!store.get('fieldsHistory')) {
-    savedFields.push('plays', 'discovered');
+    savedFields.push('discovered');
     store.set('fields', savedFields);
     store.set('fieldsHistory', true);
   }
@@ -945,6 +1071,10 @@ async function main() {
   $('#btn-share').onclick = shareGame;
   $('#btn-challenge').onclick = startChallenge;
   $('#btn-challenge-skip').onclick = dropChallenge;
+  setupChoiceUi();
+  $('#opt-answers').value = store.get('answers', matchMedia('(pointer: coarse)').matches ? 'choice' : 'type');
+  if (!$('#opt-answers').value) $('#opt-answers').value = 'type';
+  $('#opt-answers').onchange = () => store.set('answers', $('#opt-answers').value);
   $('#opt-mode').value = store.get('mode', 'classic');
   if (!$('#opt-mode').value) $('#opt-mode').value = 'classic';
   $('#opt-mode').onchange = updateModeHint;
