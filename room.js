@@ -220,11 +220,64 @@ const Salle = (() => {
     return [...shuffle(liked.filter((t) => hot.has(t.uri))), ...shuffle(liked.filter((t) => !hot.has(t.uri)).slice(0, 200))];
   }
 
-  // Deezer: the profile's coups de cœur, or its top when it has too few of them.
+  /* Which titles: the account's likes first, then its playlists. */
+
+  function showLists(title, rows) {
+    $('#room-sources').classList.add('hidden');
+    $('#room-lists').classList.remove('hidden');
+    $('#room-lists-title').textContent = title;
+    $('#room-lists-items').replaceChildren(...rows.map((r) => el('li', {}, el('button', { type: 'button', className: 'pick', onclick: r.pick }, [
+      r.picture ? el('img', { className: 'avatar list-icon', src: r.picture, alt: '', loading: 'lazy' }) : el('span', { className: 'avatar list-icon', textContent: r.icon || '♪', ariaHidden: 'true' }),
+      el('span', {}, [el('strong', { textContent: r.name }), el('span', { className: 'status', textContent: r.detail })]),
+    ]))));
+    $('#room-lists-items').scrollTop = 0;
+  }
+
+  function hideLists() {
+    $('#room-lists').classList.add('hidden');
+    $('#room-sources').classList.remove('hidden');
+  }
+
+  const count = (n) => (n == null ? '' : `${n} titre${n > 1 ? 's' : ''}`);
+
+  // A playlist: its songs shuffled, as many artists as possible.
+  const fromList = (tracks) => spreadArtists(shuffle(tracks));
+
+  // Deezer: the profile's coups de cœur or one of its public playlists.
   async function fromDeezer(user) {
+    $('#room-music-status').textContent = `Chargement des playlists de ${user.name}…`;
+    try {
+      const lists = await Deezer.profile.playlists(user.id);
+      const loved = lists.find((p) => p.loved);
+      const others = lists.filter((p) => !p.loved && p.total > 0);
+      $('#room-music-status').textContent = '';
+      if (!others.length) return deezerLiked(user, lists);
+      showLists(`Quels titres de ${user.name} ?`, [
+        { name: 'Mes coups de cœur', detail: loved ? count(loved.total) : 'les plus écoutés, faute de coups de cœur', icon: '♥', pick: () => deezerLiked(user, lists) },
+        ...others.map((p) => ({ name: p.title, detail: count(p.total), picture: p.picture, pick: () => deezerPlaylist(user, p) })),
+      ]);
+    } catch (e) {
+      $('#room-music-status').textContent = e.deezer ? 'Profil introuvable ou privé.' : e.message;
+    }
+  }
+
+  async function deezerPlaylist(user, p) {
+    $('#room-music-status').textContent = `Chargement de « ${p.title} »…`;
+    try {
+      const tracks = fromList(await Deezer.profile.playlist(p.id, 500)).slice(0, PER_PLAYER).map(toPot);
+      if (tracks.length < 5) throw new Error('Pas assez de titres écoutables dans cette playlist. Choisis-en une autre.');
+      hideLists();
+      useMusic({ source: 'deezer', label: `ta playlist « ${p.title} »`, avatar: user.picture || '', tracks });
+    } catch (e) {
+      $('#room-music-status').textContent = e.deezer ? 'Playlist introuvable ou privée.' : e.message;
+    }
+  }
+
+  // The coups de cœur (the most played ones first), or the top when there are too few of them.
+  async function deezerLiked(user, lists) {
     $('#room-music-status').textContent = `Chargement des coups de cœur de ${user.name}…`;
     try {
-      const [top, lists] = await Promise.all([Deezer.profile.top(user.id).catch(() => []), Deezer.profile.playlists(user.id)]);
+      const top = await Deezer.profile.top(user.id).catch(() => []);
       const loved = lists.find((p) => p.loved);
       const liked = loved ? await Deezer.profile.playlist(loved.id, 500) : [];
       const enough = liked.length >= MIN_LIKED;
@@ -232,6 +285,7 @@ const Salle = (() => {
       const tracks = pool.slice(0, PER_PLAYER).map(toPot);
       if (tracks.length < 5) throw new Error('Ce profil n’a pas assez de coups de cœur publics. Il doit être public sur Deezer.');
       const label = enough ? `tes coups de cœur Deezer (${user.name})` : `ton top Deezer (${user.name}), faute de coups de cœur`;
+      hideLists();
       useMusic({ source: 'deezer', label, avatar: user.picture || '', tracks });
     } catch (e) {
       $('#room-music-status').textContent = e.deezer ? 'Profil introuvable ou privé.' : e.message;
@@ -260,6 +314,62 @@ const Salle = (() => {
       return;
     }
     const say = (text) => { $('#room-music-status').textContent = text; };
+    say('Lecture de tes playlists Spotify…');
+    try {
+      // Spotify only opens the playlists the player made or collaborates on.
+      let meId = null;
+      try { meId = (await api('/me')).id; } catch { /* keep every playlist */ }
+      const lists = [];
+      for (let offset = 0; offset < 200; offset += 50) {
+        const data = await api(`/me/playlists?limit=50&offset=${offset}`);
+        lists.push(...data.items.filter((p) => p && (!meId || p.owner?.id === meId || p.collaborative)));
+        if (!data.next) break;
+      }
+      say('');
+      const usable = lists.filter((p) => ((p.items ?? p.tracks)?.total ?? 1) > 0);
+      if (!usable.length) return spotifyLiked();
+      showLists('Quels titres de ton Spotify ?', [
+        { name: 'Mes titres likés', detail: 'les plus écoutés d’abord', icon: '♥', pick: spotifyLiked },
+        ...usable.map((p) => ({ name: p.name, detail: count((p.items ?? p.tracks)?.total), picture: p.images?.[0]?.url, pick: () => spotifyPlaylist(p) })),
+      ]);
+    } catch (e) {
+      spotifyError(e);
+    }
+  }
+
+  // Finds the songs on Deezer, for the preview, until there are enough of them.
+  async function spotifyPot(pool, label) {
+    const say = (text) => { $('#room-music-status').textContent = text; };
+    let avatar = music?.avatar || '';
+    try { avatar = (await api('/me')).images?.[0]?.url || avatar; } catch { /* no picture */ }
+    const tracks = [];
+    for (const t of pool) {
+      if (tracks.length === PER_PLAYER) break;
+      say(`Recherche de tes titres sur Deezer… ${tracks.length} / ${PER_PLAYER}`);
+      if (await Deezer.resolve(t)) tracks.push(toPot(t));
+    }
+    if (tracks.length < 5) throw new Error('Pas assez de titres retrouvés sur Deezer. Choisis une autre source.');
+    hideLists();
+    useMusic({ source: 'spotify', label, avatar, tracks });
+  }
+
+  async function spotifyPlaylist(p) {
+    $('#room-music-status').textContent = `Lecture de « ${p.name} »…`;
+    try {
+      const list = [];
+      for (let offset = 0; offset < 500; offset += 50) {
+        const data = await api(`/playlists/${encodeURIComponent(p.id)}/items?limit=50&offset=${offset}`);
+        for (const it of data.items) { const t = toTrack(it.item ?? it.track, it.added_at); if (t) list.push(t); }
+        if (!data.next) break;
+      }
+      await spotifyPot(fromList(list).slice(0, 60), `ta playlist « ${p.name} »`);
+    } catch (e) {
+      spotifyError(e);
+    }
+  }
+
+  async function spotifyLiked() {
+    const say = (text) => { $('#room-music-status').textContent = text; };
     say('Lecture de tes titres Spotify…');
     try {
       const top = [];
@@ -279,28 +389,26 @@ const Salle = (() => {
         if (!data.next) break;
       }
       const enough = liked.length >= MIN_LIKED;
-      let avatar = music?.avatar || '';
-      try { avatar = (await api('/me')).images?.[0]?.url || avatar; } catch { /* no picture */ }
-      const tracks = [];
-      for (const t of spreadArtists(enough ? likedFirst(liked, top) : shuffle(top.slice(0, 40)))) {
-        if (tracks.length === PER_PLAYER) break;
-        say(`Recherche de tes titres sur Deezer… ${tracks.length} / ${PER_PLAYER}`);
-        if (await Deezer.resolve(t)) tracks.push(toPot(t));
-      }
-      if (tracks.length < 5) throw new Error('Pas assez d’écoutes sur ton compte Spotify pour le moment. Choisis une autre source.');
-      useMusic({ source: 'spotify', label: enough ? 'tes titres likés Spotify' : 'ton top Spotify, faute de titres likés', avatar, tracks });
+      await spotifyPot(spreadArtists(enough ? likedFirst(liked, top) : shuffle(top.slice(0, 40))), enough ? 'tes titres likés Spotify' : 'ton top Spotify, faute de titres likés');
     } catch (e) {
-      // api() shows its "not allowed" screen: this phone stays in the room instead.
-      if (e.notRegistered) {
-        show('screen-room');
-        say('Ton compte Spotify n’est pas encore autorisé sur le jeu (Spotify limite le nombre de comptes pour l’instant). Choisis une autre source.');
-      } else if (/token|non connecté|refresh/i.test(e.message || '')) {
-        // A session that no longer works: forget it, the next tap logs in again.
-        store.del('token');
-        say('Ta connexion Spotify a expiré. Touche « Mon compte Spotify » pour te reconnecter.');
-      } else {
-        say(e.message || 'Spotify ne répond pas. Réessaie ou choisis une autre source.');
-      }
+      spotifyError(e);
+    }
+  }
+
+  function spotifyError(e) {
+    const say = (text) => { $('#room-music-status').textContent = text; };
+    // api() shows its "not allowed" screen: this phone stays in the room instead.
+    if (e.notRegistered) {
+      show('screen-room');
+      hideLists();
+      say('Ton compte Spotify n’est pas encore autorisé sur le jeu (Spotify limite le nombre de comptes pour l’instant). Choisis une autre source.');
+    } else if (/token|non connecté|refresh/i.test(e.message || '')) {
+      // A session that no longer works: forget it, the next tap logs in again.
+      store.del('token');
+      hideLists();
+      say('Ta connexion Spotify a expiré. Touche « Mon compte Spotify » pour te reconnecter.');
+    } else {
+      say(e.message || 'Spotify ne répond pas. Réessaie ou choisis une autre source.');
     }
   }
 
@@ -654,6 +762,7 @@ const Salle = (() => {
     $('#room-use-mine').onclick = () => fromDeezer(store.get('deezerUser'));
     $('#room-use-history').onclick = fromHistory;
     $('#room-use-spotify').onclick = fromSpotify;
+    $('#room-lists-back').onclick = () => { hideLists(); $('#room-music-status').textContent = ''; };
     $('#room-same').onchange = (e) => send({ t: 'settings', sameRoom: e.target.checked });
     // Phones only let a page play sound after a touch: any tap in the room unlocks it for the rounds.
     $('#screen-room').addEventListener('click', () => Deezer.player.activateElement(), true);

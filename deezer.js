@@ -124,7 +124,7 @@ const Deezer = (() => {
     },
     async top(id) { return tracksOf(await all(`/user/${id}/charts/tracks`, 100)); },
     async playlists(id) {
-      return (await all(`/user/${id}/playlists`, 500)).map((p) => ({ id: String(p.id), title: p.title, total: p.nb_tracks, loved: !!p.is_loved_track }));
+      return (await all(`/user/${id}/playlists`, 500)).map((p) => ({ id: String(p.id), title: p.title, total: p.nb_tracks, loved: !!p.is_loved_track, picture: p.picture_medium || '' }));
     },
     async playlist(id, max) { return tracksOf(await all(`/playlist/${id}/tracks`, max)); },
   };

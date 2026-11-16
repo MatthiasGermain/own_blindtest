@@ -262,6 +262,12 @@
   .room-music .actions { margin-top: 12px; }
   .room-dz-results { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 8px; }
   button.pick { display: grid; grid-template-columns: 44px 1fr; gap: 12px; align-items: center; width: 100%; text-align: left; border-radius: 0; padding: 8px 12px; font: 400 14px var(--font-ui); background: transparent; color: var(--text); border: 1px solid var(--line-strong); }
+  .room-lists { max-height: 340px; overflow-y: auto; padding-right: 4px; }
+  .room-lists-title { margin: 0; font-size: 14px; }
+  #room-lists .back { margin-top: 12px; }
+  button.pick .status { display: block; margin: 2px 0 0; font-size: 11px; }
+  .avatar.list-icon { border-radius: 0; color: var(--accent); }
+  img.avatar.list-icon { object-fit: cover; }
   button.pick:hover:not(:disabled) { border-color: var(--text); box-shadow: 3px 3px 0 0 var(--accent); }
   .room-chosen { font-size: 15px; margin: 0 0 6px; }
   #room-music-chosen .back { margin: 0; }
@@ -537,7 +543,8 @@
           <div class="room-music">
             <h3>Ta musique</h3>
             <div id="room-music-pick">
-              <p class="status">15 titres que tu as likés (ou mis en coup de cœur) rejoignent le pot commun. Personne ne voit lesquels avant de jouer.</p>
+              <div id="room-sources">
+              <p class="status">15 de tes titres rejoignent le pot commun : tes coups de cœur, tes titres likés ou une de tes playlists. Personne ne voit lesquels avant de jouer.</p>
               <div class="actions">
                 <button id="room-use-mine" class="hidden" type="button"></button>
                 <button id="room-use-spotify" class="ghost hidden" type="button">Mon compte Spotify</button>
@@ -549,6 +556,12 @@
                 <button type="submit" class="ghost">Chercher</button>
               </form>
               <ul class="room-dz-results" id="room-dz-results"></ul>
+              </div>
+              <div id="room-lists" class="hidden">
+                <p class="room-lists-title" id="room-lists-title"></p>
+                <ul class="room-dz-results room-lists" id="room-lists-items"></ul>
+                <button id="room-lists-back" class="back" type="button">Autre source</button>
+              </div>
             </div>
             <div id="room-music-chosen" class="hidden">
               <p class="room-chosen">✓ <span id="room-music-label"></span></p>
@@ -813,13 +826,13 @@
   </footer>
 </main>
 <!-- Change ?v= on each release: a fresh page then never runs scripts kept in the browser cache. -->
-<script src="config.js?v=14"></script>
-<script src="stats.js?v=14"></script>
-<script src="scoring.js?v=14"></script>
-<script src="challenge.js?v=14"></script>
-<script src="history.js?v=14"></script>
-<script src="deezer.js?v=14"></script>
-<script src="room.js?v=14"></script>
-<script src="app.js?v=14"></script>
+<script src="config.js?v=15"></script>
+<script src="stats.js?v=15"></script>
+<script src="scoring.js?v=15"></script>
+<script src="challenge.js?v=15"></script>
+<script src="history.js?v=15"></script>
+<script src="deezer.js?v=15"></script>
+<script src="room.js?v=15"></script>
+<script src="app.js?v=15"></script>
 </body>
 </html>
