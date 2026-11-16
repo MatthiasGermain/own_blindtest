@@ -148,6 +148,7 @@ const Salle = (() => {
     $('#room-code').textContent = s.code;
     $('#room-link').textContent = link(s.code).replace(/^https?:\/\//, '');
     drawQr(s.code);
+    $('#room-music-status').textContent = '';
     renderMusic();
     show('screen-room');
     window.scrollTo(0, 0);
@@ -191,6 +192,7 @@ const Salle = (() => {
 
   function useMusic(m) {
     music = m;
+    $('#room-music-status').textContent = '';
     renderMusic();
     send({ t: 'music', source: m.source, avatar: m.avatar, tracks: m.tracks });
   }
@@ -220,6 +222,51 @@ const Salle = (() => {
     useMusic({ source: 'history', label: 'ton historique d’écoute', avatar: music?.avatar || '', tracks });
   }
 
+  // Spotify: the player's top tracks of the last weeks (then months), each found on Deezer for the preview.
+  // Without a session yet, the login leaves the page; boot() brings the phone back here and resumes.
+  async function fromSpotify() {
+    if (!store.get('token')) {
+      store.set('salleSpotify', true);
+      await login();
+      return;
+    }
+    const say = (text) => { $('#room-music-status').textContent = text; };
+    say('Lecture de tes titres Spotify…');
+    try {
+      const top = [];
+      for (const range of ['short_term', 'medium_term']) {
+        const data = await api(`/me/top/tracks?limit=50&time_range=${range}`);
+        for (const t of data.items) {
+          const track = toTrack(t, null);
+          if (track && !top.some((x) => x.uri === track.uri)) top.push(track);
+        }
+        if (top.length >= 30) break;
+      }
+      let avatar = music?.avatar || '';
+      try { avatar = (await api('/me')).images?.[0]?.url || avatar; } catch { /* no picture */ }
+      const tracks = [];
+      for (const t of shuffle(top.slice(0, 40))) {
+        if (tracks.length === PER_PLAYER) break;
+        say(`Recherche de tes titres sur Deezer… ${tracks.length} / ${PER_PLAYER}`);
+        if (await Deezer.resolve(t)) tracks.push(toPot(t));
+      }
+      if (tracks.length < 5) throw new Error('Pas assez d’écoutes sur ton compte Spotify pour le moment. Choisis une autre source.');
+      useMusic({ source: 'spotify', label: 'ton compte Spotify', avatar, tracks });
+    } catch (e) {
+      // api() shows its "not allowed" screen: this phone stays in the room instead.
+      if (e.notRegistered) {
+        show('screen-room');
+        say('Ton compte Spotify n’est pas encore autorisé sur le jeu (Spotify limite le nombre de comptes pour l’instant). Choisis une autre source.');
+      } else if (/token|non connecté|refresh/i.test(e.message || '')) {
+        // A session that no longer works: forget it, the next tap logs in again.
+        store.del('token');
+        say('Ta connexion Spotify a expiré. Touche « Mon compte Spotify » pour te reconnecter.');
+      } else {
+        say(e.message || 'Spotify ne répond pas. Réessaie ou choisis une autre source.');
+      }
+    }
+  }
+
   async function searchDeezer(e) {
     e.preventDefault();
     const q = $('#room-dz-query').value.trim();
@@ -247,11 +294,11 @@ const Salle = (() => {
     $('#room-music-pick').classList.toggle('hidden', chosen);
     if (music) $('#room-music-label').textContent = `${music.tracks.length} titres de ${music.label}`;
     else if (chosen) $('#room-music-label').textContent = `${mine.tracks} titres (${SOURCE_NAMES[mine.source]})`;
-    $('#room-music-status').textContent = '';
     const dz = store.get('deezerUser');
     $('#room-use-mine').classList.toggle('hidden', !dz);
     if (dz) $('#room-use-mine').textContent = `Mon profil Deezer : ${dz.name}`;
     $('#room-use-history').classList.toggle('hidden', !store.get('history'));
+    $('#room-use-spotify').classList.toggle('hidden', !(SPOTIFY_CLIENT_ID || store.get('clientId')));
   }
 
   /* ---------- Lobby ---------- */
@@ -542,6 +589,7 @@ const Salle = (() => {
     $('#room-dz-form').onsubmit = searchDeezer;
     $('#room-use-mine').onclick = () => fromDeezer(store.get('deezerUser'));
     $('#room-use-history').onclick = fromHistory;
+    $('#room-use-spotify').onclick = fromSpotify;
     $('#room-change').onclick = () => {
       music = null;
       $('#room-music-chosen').classList.add('hidden');
@@ -558,11 +606,22 @@ const Salle = (() => {
       history.replaceState(null, '', location.pathname + (params.size ? `?${params}` : ''));
     }
     const ongoing = store.get('salle');
+    // Back from the Spotify login started in the lobby: carry on with that music.
+    const spotifyBack = store.get('salleSpotify');
+    store.del('salleSpotify');
     // Back on the page while in a room (reload, phone woken up): straight back to it.
     if (ongoing?.token && (!code || code === ongoing.code)) {
       try {
         const res = await fetch(`${BASE}/rooms/${ongoing.code}`);
-        if (res.ok) { enter(ongoing); return true; }
+        if (res.ok) {
+          enter(ongoing);
+          if (spotifyBack) {
+            const error = $('#login-error').textContent;
+            if (error) { $('#login-error').textContent = ''; $('#room-music-status').textContent = `Connexion Spotify : ${error}`; }
+            else if (store.get('token')) fromSpotify();
+          }
+          return true;
+        }
       } catch { /* server unreachable: fall through */ }
       store.del('salle');
     }
