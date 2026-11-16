@@ -31,6 +31,11 @@ host.send({ t: 'music', source: 'deezer', tracks: tracks(1000, 15, 'M') });
 lea.send({ t: 'music', source: 'deezer', tracks: [...tracks(2000, 12, 'L'), ...shared] });
 tom.send({ t: 'music', source: 'history', tracks: [...shared, ...tracks(3000, 12, 'T')] });
 await wait(400);
+check('par défaut, le son sort de chaque téléphone', host.last('room').sameRoom === false);
+lea.send({ t: 'settings', sameRoom: true }); await wait(200);
+check('seul l’hôte règle le son', lea.last('error')?.code === 'not-host' && host.last('room').sameRoom === false);
+host.send({ t: 'settings', sameRoom: true }); await wait(300);
+check('« même pièce » coché par l’hôte, vu par tous', lea.last('room').sameRoom === true && tom.last('room').sameRoom === true);
 host.send({ t: 'start' });
 await until(() => host.last('round') && lea.last('round') && tom.last('round'));
 
@@ -38,7 +43,7 @@ let r = host.last('round').round;
 // 5 songs each; a song Léa and Tom share counts for both, so there may be a little fewer than 15 rounds.
 const TOTAL = r.total;
 check(`partie lancée : ${TOTAL} manches (entre 10 et 15)`, TOTAL >= 10 && TOTAL <= 15 && r.index === 0);
-check('le son (trackId) va à l’hôte seulement', !!r.trackId && !lea.last('round').round.trackId && !tom.last('round').round.trackId);
+check('même pièce : le son (trackId) va à l’hôte seulement', !!r.trackId && !lea.last('round').round.trackId && !tom.last('round').round.trackId);
 check('4 propositions de titre, 3 joueurs proposés', r.songs.length === 4 && r.cast.length === 3);
 check('les scores partent de 0', host.last('room').players.every((p) => p.score === 0));
 
@@ -68,6 +73,13 @@ for (let i = 0; i < TOTAL; i++) {
     lea.send({ t: 'answer', index: i, owner: ids.lea, song: 0 });
     await wait(100);
     check(`manche ${i + 1} : réponse partielle → progression`, i > 0 || host.last('progress')?.answered.length === 2);
+    if (i === 0) {
+      // Tom answers one question only: he shows as "half done", the round stays open.
+      tom.send({ t: 'answer', index: i, owner: ids.host });
+      await wait(150);
+      const pg = host.last('progress');
+      check('une seule réponse sur deux → « à moitié », la manche continue', pg.started.includes(ids.tom) && !pg.answered.includes(ids.tom) && host.last('reveal')?.reveal.index !== 0);
+    }
     tom.send({ t: 'answer', index: i, owner: ids.host, song: 2 });
     const closed = await until(() => host.last('reveal')?.reveal.index === i, 3000);
     if (!closed) { check(`manche ${i + 1} fermée dès que tout le monde a répondu`, false); break; }
@@ -114,6 +126,13 @@ host.send({ t: 'replay' });
 await until(() => host.last('room')?.phase === 'lobby');
 const room = host.last('room');
 check('Rejouer : retour au salon, mêmes joueurs, musique gardée, scores à 0', room.phase === 'lobby' && room.players.length === 3 && room.players.every((p) => p.tracks >= 5 && p.score === 0));
+
+// Second game, each on their own: every phone gets the sound.
+host.send({ t: 'settings', sameRoom: false });
+await wait(200);
+host.send({ t: 'start' });
+await until(() => host.last('round')?.round.index === 0 && tom.last('round')?.round.index === 0 && host.last('room').phase === 'playing');
+check('chacun chez soi : le son va à tous les téléphones', !!host.last('round').round.trackId && !!tom.last('round').round.trackId);
 
 for (const p of [host, lea, tom]) p.ws.close();
 console.log(failures ? `${failures} échec(s)` : 'Tout est bon.');

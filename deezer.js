@@ -126,7 +126,7 @@ const Deezer = (() => {
     async playlists(id) {
       return (await all(`/user/${id}/playlists`, 500)).map((p) => ({ id: String(p.id), title: p.title, total: p.nb_tracks, loved: !!p.is_loved_track }));
     },
-    async playlist(id) { return tracksOf(await all(`/playlist/${id}/tracks`)); },
+    async playlist(id, max) { return tracksOf(await all(`/playlist/${id}/tracks`, max)); },
   };
 
   // Same surface as the Spotify SDK player the game already drives.

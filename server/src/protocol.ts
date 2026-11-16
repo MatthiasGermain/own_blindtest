@@ -48,9 +48,10 @@ export interface RoundView {
   now: number; // server clock when sent: lets each device correct its own clock
   cast: CastMember[]; // the possible answers to "whose is it?"
   songs: SongOption[];
-  trackId?: string; // the Deezer track to play: sent to the host's device only
+  trackId?: string; // the Deezer track to play: to every device, or to the host's only when everyone is in the same room
   mine: { owner?: string; song?: number }; // this device's answers so far
   answered: string[]; // players who have answered everything
+  started: string[]; // players who have answered at least one of the two questions
 }
 
 export interface RoundResult {
@@ -88,6 +89,8 @@ export type ClientMessage =
   // The player's tracks for the pot; sent again to change them, while in the lobby.
   | { t: 'music'; source: MusicSource; avatar?: string; tracks: PotTrack[] }
   | { t: 'kick'; id: string } // host only
+  // host only, in the lobby: everyone in the same room → the sound plays on the host's device only
+  | { t: 'settings'; sameRoom: boolean }
   | { t: 'start' } // host only
   | { t: 'answer'; index: number; owner?: string; song?: number } // each answer counts once
   | { t: 'next' } // host only: after a reveal, next round or the final standings
@@ -97,9 +100,9 @@ export type ClientMessage =
 // Server → device
 export type ServerMessage =
   | { t: 'welcome'; you: { id: string; token: string; host: boolean } }
-  | { t: 'room'; code: string; phase: Phase; players: PublicPlayer[]; expiresAt: number }
+  | { t: 'room'; code: string; phase: Phase; players: PublicPlayer[]; expiresAt: number; sameRoom: boolean }
   | { t: 'round'; round: RoundView }
-  | { t: 'progress'; index: number; answered: string[] }
+  | { t: 'progress'; index: number; answered: string[]; started: string[] }
   | { t: 'reveal'; reveal: RevealView }
   | { t: 'final'; final: FinalView }
   | { t: 'error'; code: ErrorCode; message: string };

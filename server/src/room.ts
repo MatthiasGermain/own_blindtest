@@ -28,6 +28,7 @@ interface RoomState {
   phase: Phase;
   players: Player[];
   game?: Game | null;
+  sameRoom?: boolean; // everyone around one loudspeaker: only the host's device plays the sound
 }
 
 interface Attachment { id: string }
@@ -131,6 +132,14 @@ export class Room extends DurableObject {
         await this.remove(s, msg.id);
         return;
       }
+      case 'settings': {
+        if (!me.host) return this.error(ws, 'not-host', 'Seul l’hôte peut changer ça.');
+        if (s.phase !== 'lobby') return;
+        s.sameRoom = msg.sameRoom === true;
+        await this.save(s);
+        this.broadcast(s);
+        return;
+      }
       case 'start': {
         if (!me.host) return this.error(ws, 'not-host', 'Seul l’hôte peut lancer la partie.');
         if (s.phase !== 'lobby') return;
@@ -225,16 +234,22 @@ export class Room extends DurableObject {
       now: Date.now(),
       cast: g.cast,
       songs: r.songs,
-      // Only the device that plays the sound learns which track it is.
-      ...(p.host ? { trackId: r.track.id } : {}),
+      // Only the devices that play the sound learn which track it is.
+      ...(p.host || !s.sameRoom ? { trackId: r.track.id } : {}),
       mine: { owner: a.owner, song: a.song },
       answered: this.answered(s),
+      started: this.started(s),
     };
   }
 
   private answered(s: RoomState) {
     const r = s.game!.rounds[s.game!.index];
     return Object.entries(r.answers).filter(([, a]) => a.owner !== undefined && a.song !== undefined).map(([id]) => id);
+  }
+
+  private started(s: RoomState) {
+    const r = s.game!.rounds[s.game!.index];
+    return Object.entries(r.answers).filter(([, a]) => a.owner !== undefined || a.song !== undefined).map(([id]) => id);
   }
 
   private async answer(s: RoomState, me: Player, msg: Extract<ClientMessage, { t: 'answer' }>) {
@@ -258,7 +273,7 @@ export class Room extends DurableObject {
     const done = new Set(this.answered(s));
     if (present.length && present.every((p) => done.has(p.id))) return this.closeRound(s);
     await this.save(s);
-    this.sendAll({ t: 'progress', index: g.index, answered: [...done] });
+    this.sendAll({ t: 'progress', index: g.index, answered: [...done], started: this.started(s) });
   }
 
   private async closeRound(s: RoomState) {
@@ -356,7 +371,7 @@ export class Room extends DurableObject {
       id: p.id, name: p.name, avatar: p.avatar, host: p.host, online: this.socketsOf(p.id, closing).length > 0,
       source: p.source, tracks: p.tracks.length, score: s.game?.scores[p.id] ?? 0,
     }));
-    const msg: ServerMessage = { t: 'room', code: s.code, phase: s.phase, players, expiresAt: s.expiresAt };
+    const msg: ServerMessage = { t: 'room', code: s.code, phase: s.phase, players, expiresAt: s.expiresAt, sameRoom: !!s.sameRoom };
     for (const ws of this.ctx.getWebSockets()) if (ws !== closing) this.send(ws, msg);
   }
 }

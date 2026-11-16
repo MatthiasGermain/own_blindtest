@@ -292,6 +292,8 @@
   .rg-faces { display: flex; }
   .rg-faces .avatar { width: 30px; height: 30px; font-size: 13px; margin-right: -6px; border: 2px solid var(--surface); transition: opacity .3s, filter .3s; }
   .rg-faces .avatar.dim { opacity: .3; filter: grayscale(1); }
+  .rg-faces .avatar.half { opacity: .7; filter: grayscale(.6); }
+  .room-sound .fields { margin: 4px 0 6px; }
   .rg-answered .status { margin: 0 0 0 8px; }
   #rg-mine { min-height: 1.5em; }
   .rv-title { font-size: clamp(26px, 7vw, 40px); line-height: 1.05; margin: 0 0 4px; }
@@ -533,7 +535,7 @@
           <div class="room-music">
             <h3>Ta musique</h3>
             <div id="room-music-pick">
-              <p class="status">15 de tes titres du moment rejoignent le pot commun. Personne ne voit lesquels avant de jouer.</p>
+              <p class="status">15 titres que tu as likés (ou mis en coup de cœur) rejoignent le pot commun. Personne ne voit lesquels avant de jouer.</p>
               <div class="actions">
                 <button id="room-use-mine" class="hidden" type="button"></button>
                 <button id="room-use-spotify" class="ghost hidden" type="button">Mon compte Spotify</button>
@@ -551,6 +553,11 @@
               <button id="room-change" class="back" type="button">Changer</button>
             </div>
             <p class="status" id="room-music-status" role="status"></p>
+          </div>
+          <div class="room-music room-sound">
+            <h3>Le son</h3>
+            <div class="fields hidden" id="room-same-row"><label><input type="checkbox" id="room-same"> Tous dans la même pièce</label></div>
+            <p class="status" id="room-same-info"></p>
           </div>
           <p class="status" id="room-wait"></p>
           <div class="actions">
@@ -804,13 +811,13 @@
   </footer>
 </main>
 <!-- Change ?v= on each release: a fresh page then never runs scripts kept in the browser cache. -->
-<script src="config.js?v=12"></script>
-<script src="stats.js?v=12"></script>
-<script src="scoring.js?v=12"></script>
-<script src="challenge.js?v=12"></script>
-<script src="history.js?v=12"></script>
-<script src="deezer.js?v=12"></script>
-<script src="room.js?v=12"></script>
-<script src="app.js?v=12"></script>
+<script src="config.js?v=13"></script>
+<script src="stats.js?v=13"></script>
+<script src="scoring.js?v=13"></script>
+<script src="challenge.js?v=13"></script>
+<script src="history.js?v=13"></script>
+<script src="deezer.js?v=13"></script>
+<script src="room.js?v=13"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

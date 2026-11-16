@@ -1,10 +1,12 @@
 // « Qui écoute ça ? » : rooms played by several people, each on their own phone (server in server/).
 // This file handles the lobby (create or join a room, bring one's music, see the others arrive) and the
-// game as each phone sees it: the question, the reveal, the podium. The host's device also plays the sound.
+// game as each phone sees it: the question, the reveal, the podium. Each phone plays the sound, or only the
+// host's when everyone is in the same room.
 // It uses app.js helpers ($, el, store, show, openPanel, goHome, shuffle, historyTracks).
 const Salle = (() => {
   const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
-  const BASE = (typeof ROOMS_URL === 'string' && ROOMS_URL) || (local ? 'http://127.0.0.1:8787' : '');
+  // The site served locally talks to the local server (npm run dev in server/), the published one to ROOMS_URL.
+  const BASE = local ? 'http://127.0.0.1:8787' : (typeof ROOMS_URL === 'string' && ROOMS_URL) || '';
   const PER_PLAYER = 15;
   // Closing codes after which coming back makes no sense.
   const FINAL = { 1000: true, 4001: 'L’hôte t’a retiré de la salle.', 4002: true, 4003: 'La salle a expiré.', 4004: 'Cette salle n’existe plus.' };
@@ -53,7 +55,9 @@ const Salle = (() => {
   }
 
   function send(msg) {
-    if (ws?.readyState === 1) ws.send(JSON.stringify(msg));
+    if (ws?.readyState !== 1) return false;
+    ws.send(JSON.stringify(msg));
+    return true;
   }
 
   function onMessage(m) {
@@ -64,6 +68,8 @@ const Salle = (() => {
       save();
       // Music chosen before the connection (or before a reconnection) is sent again, while in the lobby.
       if (music && (!room || room.phase === 'lobby')) send({ t: 'music', source: music.source, avatar: music.avatar, tracks: music.tracks });
+      // Answers tapped while the connection was down: the server keeps only the first of each.
+      Game.resend();
     } else if (m.t === 'room') {
       room = m;
       render();
@@ -197,14 +203,27 @@ const Salle = (() => {
     send({ t: 'music', source: m.source, avatar: m.avatar, tracks: m.tracks });
   }
 
-  // The player's most played tracks of the moment, shuffled a little so two games differ.
+  // Only songs the player has liked: first the ones they also play the most, then their other likes.
+  // Shuffled, so two games differ.
+  const MIN_LIKED = 5;
+  function likedFirst(liked, top) {
+    const hot = new Set(top.map((t) => t.uri));
+    return [...shuffle(liked.filter((t) => hot.has(t.uri))), ...shuffle(liked.filter((t) => !hot.has(t.uri)).slice(0, 200))];
+  }
+
+  // Deezer: the profile's coups de cœur, or its top when it has too few of them.
   async function fromDeezer(user) {
-    $('#room-music-status').textContent = `Chargement du profil ${user.name}…`;
+    $('#room-music-status').textContent = `Chargement des coups de cœur de ${user.name}…`;
     try {
-      const top = await Deezer.profile.top(user.id);
-      const tracks = shuffle(top.slice(0, 40)).slice(0, PER_PLAYER).map(toPot);
-      if (tracks.length < 5) throw new Error('Ce profil n’a pas assez d’écoutes publiques. Il doit être public sur Deezer.');
-      useMusic({ source: 'deezer', label: `ton profil Deezer ${user.name}`, avatar: user.picture || '', tracks });
+      const [top, lists] = await Promise.all([Deezer.profile.top(user.id).catch(() => []), Deezer.profile.playlists(user.id)]);
+      const loved = lists.find((p) => p.loved);
+      const liked = loved ? await Deezer.profile.playlist(loved.id, 500) : [];
+      const enough = liked.length >= MIN_LIKED;
+      const pool = enough ? likedFirst(liked, top) : shuffle(top.slice(0, 40));
+      const tracks = pool.slice(0, PER_PLAYER).map(toPot);
+      if (tracks.length < 5) throw new Error('Ce profil n’a pas assez de coups de cœur publics. Il doit être public sur Deezer.');
+      const label = enough ? `tes coups de cœur Deezer (${user.name})` : `ton top Deezer (${user.name}), faute de coups de cœur`;
+      useMusic({ source: 'deezer', label, avatar: user.picture || '', tracks });
     } catch (e) {
       $('#room-music-status').textContent = e.deezer ? 'Profil introuvable ou privé.' : e.message;
     }
@@ -222,7 +241,8 @@ const Salle = (() => {
     useMusic({ source: 'history', label: 'ton historique d’écoute', avatar: music?.avatar || '', tracks });
   }
 
-  // Spotify: the player's top tracks of the last weeks (then months), each found on Deezer for the preview.
+  // Spotify: the player's liked songs (the ones they also play the most first), each found on Deezer for
+  // the preview. Their top tracks only when they have liked too few songs.
   // Without a session yet, the login leaves the page; boot() brings the phone back here and resumes.
   async function fromSpotify() {
     if (!store.get('token')) {
@@ -242,16 +262,24 @@ const Salle = (() => {
         }
         if (top.length >= 30) break;
       }
+      say('Lecture de tes titres likés…');
+      const liked = [];
+      for (let offset = 0; offset < 500; offset += 50) {
+        const data = await api(`/me/tracks?limit=50&offset=${offset}`);
+        for (const it of data.items) { const t = toTrack(it.track, it.added_at); if (t) liked.push(t); }
+        if (!data.next) break;
+      }
+      const enough = liked.length >= MIN_LIKED;
       let avatar = music?.avatar || '';
       try { avatar = (await api('/me')).images?.[0]?.url || avatar; } catch { /* no picture */ }
       const tracks = [];
-      for (const t of shuffle(top.slice(0, 40))) {
+      for (const t of enough ? likedFirst(liked, top) : shuffle(top.slice(0, 40))) {
         if (tracks.length === PER_PLAYER) break;
         say(`Recherche de tes titres sur Deezer… ${tracks.length} / ${PER_PLAYER}`);
         if (await Deezer.resolve(t)) tracks.push(toPot(t));
       }
       if (tracks.length < 5) throw new Error('Pas assez d’écoutes sur ton compte Spotify pour le moment. Choisis une autre source.');
-      useMusic({ source: 'spotify', label: 'ton compte Spotify', avatar, tracks });
+      useMusic({ source: 'spotify', label: enough ? 'tes titres likés Spotify' : 'ton top Spotify, faute de titres likés', avatar, tracks });
     } catch (e) {
       // api() shows its "not allowed" screen: this phone stays in the room instead.
       if (e.notRegistered) {
@@ -341,6 +369,13 @@ const Salle = (() => {
     if (!playing) Game.reset();
     Game.scores();
 
+    // The sound: on every phone, or only on the host's when everyone sits around it.
+    $('#room-same-row').classList.toggle('hidden', !me.host);
+    $('#room-same').checked = !!room.sameRoom;
+    $('#room-same-info').textContent = room.sameRoom
+      ? (me.host ? 'Le son sort seulement de ton téléphone : monte le volume.' : 'Le son sort du téléphone de l’hôte.')
+      : (me.host ? 'Le son sort de chaque téléphone. Coche si vous êtes ensemble, pour éviter l’écho.' : 'Le son sort de chaque téléphone : monte le volume.');
+
     const missing = room.players.filter((p) => !p.source).map((p) => p.name);
     const startBtn = $('#room-start');
     startBtn.classList.toggle('hidden', !me.host);
@@ -365,7 +400,8 @@ const Salle = (() => {
     let offset = 0; // server clock − this device's clock
     let ticker = null;
     let cast = [];
-    let soundFor = -1; // round whose sound this host device already started
+    let soundFor = -1; // round whose sound this device already started
+    let local = { index: -1, a: {} }; // this phone's answers to the current round, kept across reconnections
 
     const person = (id) => cast.find((c) => c.id === id) || room?.players.find((p) => p.id === id) || { id, name: '?', avatar: '' };
     const scoreOf = (id) => room?.players.find((p) => p.id === id)?.score ?? 0;
@@ -376,6 +412,7 @@ const Salle = (() => {
       clearInterval(ticker);
       round = null;
       soundFor = -1;
+      local = { index: -1, a: {} };
       Deezer.player.pause();
     }
 
@@ -399,12 +436,14 @@ const Salle = (() => {
       view('question');
       $('#rg-question').classList.toggle('done', false);
 
-      const mine = { ...r.mine };
+      // What the server already has, completed by what this phone tapped while offline.
+      const mine = { ...(local.index === r.index ? local.a : {}), ...r.mine };
+      local = { index: r.index, a: mine };
       const answer = (field, value) => {
         if (mine[field] !== undefined || remaining() <= 0) return;
         mine[field] = value;
         send({ t: 'answer', index: r.index, [field]: value });
-        paint();
+        paint(field);
       };
       $('#rg-owners').replaceChildren(...r.cast.map((c) => el('button', {
         type: 'button', className: 'owner', onclick: () => answer('owner', c.id),
@@ -413,7 +452,7 @@ const Salle = (() => {
         type: 'button', onclick: () => answer('song', i),
       }, [el('strong', { textContent: s.title }), el('span', { className: 'status', textContent: s.artist })])));
 
-      function paint() {
+      function paint(just) {
         [...$('#rg-owners').children].forEach((b, i) => {
           b.setAttribute('aria-pressed', String(r.cast[i].id === mine.owner));
           b.disabled = mine.owner !== undefined;
@@ -425,10 +464,17 @@ const Salle = (() => {
         const both = mine.owner !== undefined && mine.song !== undefined;
         $('#rg-question').classList.toggle('done', both);
         if (both) $('#rg-mine').textContent = 'Réponses envoyées. On attend les autres…';
+        else if (mine.owner !== undefined || mine.song !== undefined) {
+          // Half done: the other question is often below the fold on a phone.
+          const next = mine.owner === undefined ? '#rg-owners' : '#rg-songs';
+          $('#rg-mine').textContent = mine.owner === undefined ? 'Et maintenant : à qui est ce titre ?' : 'Et maintenant : quel titre ?';
+          const box = $(next).getBoundingClientRect();
+          if (just && (box.top < 0 || box.bottom > innerHeight)) $(next).scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
       }
       $('#rg-mine').textContent = '';
       paint();
-      progress({ index: r.index, answered: r.answered });
+      progress({ index: r.index, answered: r.answered, started: r.started || [] });
 
       // The clock: a draining bar and the seconds left, on the server's time.
       const bar = $('#rg-countdown i');
@@ -449,7 +495,7 @@ const Salle = (() => {
       tick();
       ticker = setInterval(tick, 250);
 
-      // The host's device is the loudspeaker.
+      // Every phone plays the sound, or only the host's when everyone is in the same room.
       $('#rg-host').classList.toggle('hidden', !r.trackId);
       if (r.trackId && soundFor !== r.index) { soundFor = r.index; play(r.trackId); }
     }
@@ -471,13 +517,16 @@ const Salle = (() => {
     function progress(m) {
       if (!round || m.index !== round.index) return;
       const done = new Set(m.answered);
+      const started = new Set(m.started || []);
+      const half = cast.filter((c) => started.has(c.id) && !done.has(c.id)).length;
       $('#rg-answered').replaceChildren(...cast.map((c) => {
         const a = avatarOf(c.avatar, c.name);
-        a.classList.toggle('dim', !done.has(c.id));
+        a.classList.toggle('dim', !started.has(c.id) && !done.has(c.id));
+        a.classList.toggle('half', started.has(c.id) && !done.has(c.id));
         a.title = c.name;
         return a;
       }));
-      $('#rg-answered-text').textContent = `${done.size} / ${cast.length} ont répondu`;
+      $('#rg-answered-text').textContent = `${done.size} / ${cast.length} ont répondu${half ? ` · ${half} à moitié` : ''}`;
     }
 
     /* Reveal */
@@ -564,7 +613,13 @@ const Salle = (() => {
       $('#fn-leave').onclick = () => { send({ t: 'leave' }); end(); };
     }
 
-    return { round: round_, progress, reveal, final, reset, scores, wire };
+    function resend() {
+      if (!round || local.index !== round.index) return;
+      const { owner, song } = local.a;
+      if (owner !== undefined || song !== undefined) send({ t: 'answer', index: round.index, owner, song });
+    }
+
+    return { round: round_, progress, reveal, final, reset, scores, wire, resend };
   })();
 
   /* ---------- Wiring ---------- */
@@ -590,6 +645,9 @@ const Salle = (() => {
     $('#room-use-mine').onclick = () => fromDeezer(store.get('deezerUser'));
     $('#room-use-history').onclick = fromHistory;
     $('#room-use-spotify').onclick = fromSpotify;
+    $('#room-same').onchange = (e) => send({ t: 'settings', sameRoom: e.target.checked });
+    // Phones only let a page play sound after a touch: any tap in the room unlocks it for the rounds.
+    $('#screen-room').addEventListener('click', () => Deezer.player.activateElement(), true);
     $('#room-change').onclick = () => {
       music = null;
       $('#room-music-chosen').classList.add('hidden');
