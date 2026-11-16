@@ -239,7 +239,9 @@
   .room-grid { display: grid; gap: 16px; }
   .room-grid > .card { margin: 0; }
   .room-kicker { font-size: 11px; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); margin: 0; }
-  .room-code { font-size: clamp(72px, 22vw, 112px); line-height: 1; letter-spacing: .06em; color: var(--accent); margin: 4px 0 12px; }
+  /* Sized on the card, not the screen: four wide letters (WWMW) still fit. */
+  .room-invite { container-type: inline-size; }
+  .room-code { font-size: clamp(72px, 22vw, 112px); font-size: clamp(56px, 22cqi, 112px); line-height: 1; letter-spacing: .06em; color: var(--accent); margin: 4px 0 12px; white-space: nowrap; }
   .room-qr { background: var(--text); padding: 12px; width: 168px; margin: 0 0 12px; }
   .room-qr svg { display: block; width: 100%; height: auto; }
   #room-link { color: var(--text); word-break: break-all; }
@@ -341,7 +343,7 @@
     .tile-wide .tile-tag { grid-column: 1 / -1; }
     .room-grid { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 24px; align-items: start; }
     .room-invite { position: sticky; top: 24px; padding: 32px; }
-    .room-code { font-size: clamp(96px, 9vw, 136px); }
+    .room-code { font-size: clamp(64px, 22cqi, 136px); }
     .room-qr { width: 220px; }
     .room-grid.in-game { grid-template-columns: 1fr; }
     .room-grid.in-game .room-main { padding: 28px 32px; }
@@ -811,13 +813,13 @@
   </footer>
 </main>
 <!-- Change ?v= on each release: a fresh page then never runs scripts kept in the browser cache. -->
-<script src="config.js?v=13"></script>
-<script src="stats.js?v=13"></script>
-<script src="scoring.js?v=13"></script>
-<script src="challenge.js?v=13"></script>
-<script src="history.js?v=13"></script>
-<script src="deezer.js?v=13"></script>
-<script src="room.js?v=13"></script>
-<script src="app.js?v=13"></script>
+<script src="config.js?v=14"></script>
+<script src="stats.js?v=14"></script>
+<script src="scoring.js?v=14"></script>
+<script src="challenge.js?v=14"></script>
+<script src="history.js?v=14"></script>
+<script src="deezer.js?v=14"></script>
+<script src="room.js?v=14"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>

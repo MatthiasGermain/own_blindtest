@@ -206,6 +206,15 @@ const Salle = (() => {
   // Only songs the player has liked: first the ones they also play the most, then their other likes.
   // Shuffled, so two games differ.
   const MIN_LIKED = 5;
+  // Each artist once before any artist twice, the order kept otherwise: a pot of 15 varied songs.
+  function spreadArtists(list) {
+    const rank = new Map();
+    return list
+      .map((t, i) => { const a = (t.artists[0] || '').toLowerCase(); const r = rank.get(a) ?? 0; rank.set(a, r + 1); return { t, r, i }; })
+      .sort((x, y) => x.r - y.r || x.i - y.i)
+      .map((x) => x.t);
+  }
+
   function likedFirst(liked, top) {
     const hot = new Set(top.map((t) => t.uri));
     return [...shuffle(liked.filter((t) => hot.has(t.uri))), ...shuffle(liked.filter((t) => !hot.has(t.uri)).slice(0, 200))];
@@ -219,7 +228,7 @@ const Salle = (() => {
       const loved = lists.find((p) => p.loved);
       const liked = loved ? await Deezer.profile.playlist(loved.id, 500) : [];
       const enough = liked.length >= MIN_LIKED;
-      const pool = enough ? likedFirst(liked, top) : shuffle(top.slice(0, 40));
+      const pool = spreadArtists(enough ? likedFirst(liked, top) : shuffle(top.slice(0, 40)));
       const tracks = pool.slice(0, PER_PLAYER).map(toPot);
       if (tracks.length < 5) throw new Error('Ce profil n’a pas assez de coups de cœur publics. Il doit être public sur Deezer.');
       const label = enough ? `tes coups de cœur Deezer (${user.name})` : `ton top Deezer (${user.name}), faute de coups de cœur`;
@@ -230,7 +239,7 @@ const Salle = (() => {
   }
 
   async function fromHistory() {
-    const pool = shuffle(historyTracks().slice(0, 60));
+    const pool = spreadArtists(shuffle(historyTracks().slice(0, 60)));
     const tracks = [];
     for (const t of pool) {
       if (tracks.length === PER_PLAYER) break;
@@ -273,7 +282,7 @@ const Salle = (() => {
       let avatar = music?.avatar || '';
       try { avatar = (await api('/me')).images?.[0]?.url || avatar; } catch { /* no picture */ }
       const tracks = [];
-      for (const t of enough ? likedFirst(liked, top) : shuffle(top.slice(0, 40))) {
+      for (const t of spreadArtists(enough ? likedFirst(liked, top) : shuffle(top.slice(0, 40)))) {
         if (tracks.length === PER_PLAYER) break;
         say(`Recherche de tes titres sur Deezer… ${tracks.length} / ${PER_PLAYER}`);
         if (await Deezer.resolve(t)) tracks.push(toPot(t));

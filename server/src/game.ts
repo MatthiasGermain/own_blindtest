@@ -42,6 +42,17 @@ const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,
   .replace(/\s*[([].*?[)\]]/g, '').replace(/\s+-\s+.*$/, '').replace(/[^a-z0-9]+/g, ' ').trim();
 const songKey = (t: PotTrack) => `${norm(t.artist)}|${norm(t.title)}`;
 
+const MAX_RUN = 3; // at most this many rounds in a row with songs of the same player
+
+/** Reorders a list so each artist comes once before any comes twice (the order is otherwise kept). */
+export function spreadArtists<T extends { artist: string }>(list: T[]): T[] {
+  const rank = new Map<string, number>();
+  return list
+    .map((t, i) => { const a = norm(t.artist); const r = rank.get(a) ?? 0; rank.set(a, r + 1); return { t, r, i }; })
+    .sort((x, y) => x.r - y.r || x.i - y.i)
+    .map((x) => x.t);
+}
+
 /** Between 10 and 15 rounds when the pots allow it, the same number for every player. */
 export function roundsPerPlayer(players: number) {
   let per = Math.max(1, Math.floor(15 / players));
@@ -72,11 +83,12 @@ export function buildGame(players: { id: string; name: string; avatar: string; t
   }
 
   // Each player gets the same number of their own songs; a shared song counts for everyone who has it.
+  // Each player's songs are taken from as many different artists as their pot allows.
   const per = roundsPerPlayer(players.length);
   const picked = new Set<string>();
   const count = new Map(players.map((p) => [p.id, 0]));
   for (const p of shuffle(players, rand)) {
-    for (const t of shuffle(p.tracks, rand)) {
+    for (const t of spreadArtists(shuffle(p.tracks, rand))) {
       if ((count.get(p.id) ?? 0) >= per) break;
       const key = byId.get(t.id)!;
       if (picked.has(key)) continue;
@@ -85,19 +97,28 @@ export function buildGame(players: { id: string; name: string; avatar: string; t
     }
   }
 
-  // Order: shuffled, then nobody twice in a row when it can be avoided.
-  const order = shuffle([...picked], rand);
-  for (let i = 1; i < order.length; i++) {
-    const prev = pot.get(order[i - 1])!.owners;
-    if (![...pot.get(order[i])!.owners].some((o) => prev.has(o))) continue;
-    const j = order.findIndex((k, n) => n > i && ![...pot.get(k)!.owners].some((o) => prev.has(o)));
-    if (j > 0) [order[i], order[j]] = [order[j], order[i]];
+  // Order: a real draw, so "whose turn is it?" gives nothing away. It only avoids a long run of the
+  // same player's songs, and the same artist twice in a row.
+  const shares = (a: string, b: string) => [...pot.get(a)!.owners].some((o) => pot.get(b)!.owners.has(o));
+  const artistOf = (k: string) => norm(pot.get(k)!.track.artist);
+  const left = shuffle([...picked], rand);
+  const order: string[] = [];
+  while (left.length) {
+    const n = order.length;
+    const tooLong = (k: string) => n >= MAX_RUN && order.slice(-MAX_RUN).every((x) => shares(x, k));
+    const sameArtist = (k: string) => n > 0 && artistOf(order[n - 1]) === artistOf(k);
+    // A run that grows too long is worse than two songs of one artist; at the very end, no choice is left.
+    let i = left.findIndex((k) => !tooLong(k) && !sameArtist(k));
+    if (i < 0) i = left.findIndex((k) => !tooLong(k));
+    if (i < 0) i = 0;
+    order.push(...left.splice(i, 1));
   }
 
   const keys = [...pot.keys()];
   const rounds: GameRound[] = order.map((key) => {
     const { track, owners } = pot.get(key)!;
-    const others = shuffle(keys.filter((k) => k !== key), rand).slice(0, 3).map((k) => pot.get(k)!.track);
+    // Wrong options from other artists first: four songs of one artist would look all alike.
+    const others = spreadArtists([track, ...shuffle(keys.filter((k) => k !== key), rand).map((k) => pot.get(k)!.track)]).slice(1, 4);
     const options = shuffle([track, ...others], rand);
     return {
       track,
