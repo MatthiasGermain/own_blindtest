@@ -35,6 +35,7 @@ const Deezer = (() => {
         track.cover ||= d.album?.cover_xl || d.album?.cover_big || '';
         track.album ||= d.album?.title || '';
         track.artistId ??= d.artist?.id;
+        track.dzId ??= String(d.id);
       }
       // Profile tracks come without a release date: it lives on the album.
       if (track.releaseYear === undefined && track.albumId) {
@@ -114,7 +115,12 @@ const Deezer = (() => {
     id: profileId,
     async user(id) {
       const u = await call(`/user/${id}`);
-      return { id: String(u.id), name: u.name || 'Profil Deezer' };
+      return { id: String(u.id), name: u.name || 'Profil Deezer', picture: u.picture_medium || '' };
+    },
+    // Profiles by name, for joining a room without hunting for one's profile link.
+    async search(q) {
+      const res = await call(`/search/user?q=${encodeURIComponent(q)}&limit=8`);
+      return (res.data || []).map((u) => ({ id: String(u.id), name: u.name || '?', picture: u.picture_medium || '' }));
     },
     async top(id) { return tracksOf(await all(`/user/${id}/charts/tracks`, 100)); },
     async playlists(id) {

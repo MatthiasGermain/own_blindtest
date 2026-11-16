@@ -1144,6 +1144,8 @@ async function main() {
   }
   // A failed Spotify login lands back on its own panel, where the error is shown.
   if ($('#login-error').textContent) { goHome('spotify'); return; }
+  // A room link, or a room this phone is still in, wins over everything else.
+  if (await Salle.boot()) return;
   if (!store.get('token') && !store.get('history') && !store.get('deezerUser')) { goHome(); return; }
   enterSetup();
 }

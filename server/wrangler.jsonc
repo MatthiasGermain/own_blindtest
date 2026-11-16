@@ -1,0 +1,16 @@
+{
+  // Serveur des salles « Qui écoute ça ? ». Le site reste sur GitHub Pages ; seul ce Worker tourne chez Cloudflare.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "blindtest-salles",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "Room" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
+  "vars": {
+    // Sites autorisés à ouvrir une salle (séparés par des virgules).
+    "ALLOWED_ORIGINS": "https://matthiasgermain.github.io,http://127.0.0.1:8888,http://localhost:8888"
+  },
+  "observability": { "enabled": true }
+}

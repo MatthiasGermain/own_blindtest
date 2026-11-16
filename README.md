@@ -55,10 +55,27 @@ deezer.js      API publique Deezer (JSONP), profils, lecteur d'extraits
 history.js     lecture des exports Spotify et YouTube Music (ZIP ou JSON)
 scoring.js     barème (textes tolérants, années, artistes multiples)
 challenge.js   liens de défi (JSON compressé dans l'URL)
+room.js        salles « Qui écoute ça ? » : créer, rejoindre, salon, musique de chacun
 stats.js       mesure d'audience sans cookies (Umami ou GoatCounter)
 config.js      Client ID Spotify et compte de mesure d'audience
 og.jpg         image d'aperçu des liens partagés (source : tools/og-image.html)
 ```
+
+### Serveur des salles (`server/`)
+
+Le mode « Qui écoute ça ? » se joue à plusieurs, chacun sur son téléphone, avec un code de salle. Chacun apporte 15 de ses titres ; à chaque manche, un extrait passe sur l'appareil de l'hôte et tout le monde devine à qui il appartient et de quel titre il s'agit. Le site reste statique ; seules les salles passent par un Worker Cloudflare en TypeScript, avec un Durable Object par salle (`server/src/room.ts`). Le serveur arbitre : il tire les manches (autant de titres pour chaque joueur, entre 10 et 15 manches), garde les réponses secrètes jusqu'à la révélation, chronomètre (20 s) et compte les points (`server/src/game.ts`). Une salle accueille 8 joueurs au plus et s'efface au bout de 2 heures.
+
+Barème : 100 points par bonne réponse (à qui, quel titre), plus 50 au plus pour la vitesse ; −50 si l'on ne reconnaît pas son propre titre.
+
+```bash
+cd server
+npm install
+npm run dev     # serveur local sur http://127.0.0.1:8787
+npm test        # test du salon, serveur local lancé
+npm run test:game   # partie complète à trois joueurs (environ 30 s)
+```
+
+`server/dev.html` simule plusieurs téléphones dans un même onglet (à ouvrir depuis le site local). Mise en ligne : `npm run deploy`, avec un compte Cloudflare.
 
 ### Lancer en local
 
@@ -76,5 +93,6 @@ Le site est servi par GitHub Pages depuis `main`. Avant chaque mise en ligne, **
 
 - `SPOTIFY_CLIENT_ID` : l'app créée sur developer.spotify.com. Son Redirect URI doit être l'adresse exacte du site.
 - `STATS.umamiId` ou `STATS.goatcounter` : le compte de mesure d'audience. Vide, rien n'est envoyé.
+- `ROOMS_URL` : l'adresse du serveur des salles une fois déployé. Vide, la tuile « Qui écoute ça ? » est cachée en ligne (en local, le serveur de développement est utilisé).
 
-Événements mesurés : `source-ouverte`, `deezer-connecte`, `historique-importe`, `spotify-connexion`, `spotify-refuse`, `partie-lancee`, `partie-finie`, `partage`, `defi-ouvert`, `erreur-source`, `lien-auteur`.
+Événements mesurés : `source-ouverte`, `deezer-connecte`, `historique-importe`, `spotify-connexion`, `spotify-refuse`, `partie-lancee`, `partie-finie`, `partage`, `defi-ouvert`, `erreur-source`, `lien-auteur`, `salle-creee`, `salle-rejointe`, `salle-lancee`, `salle-finie`.

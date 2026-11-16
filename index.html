@@ -132,6 +132,7 @@
   .tile-main:hover:not(:disabled) { box-shadow: 5px 5px 0 0 var(--text); }
   @media (min-width: 620px) {
     .tiles { grid-template-columns: 1.25fr 1fr; }
+    .tile-wide { grid-column: 1 / -1; }
     .tile-main { grid-row: span 2; align-content: end; padding-bottom: 26px; }
     .tile-main .tile-name { font-size: 76px; }
   }
@@ -225,6 +226,99 @@
   .recap span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .recap strong { font: 900 18px var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; }
 
+  /* ---------- Qui écoute ça ? (salles) ---------- */
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .tile-wide { border-color: var(--accent); }
+  .tile-wide .tile-tag { color: var(--accent); }
+  .invited #salle-create, .invited .or, .invited #salle-join label { display: none; }
+  .invited #salle-join { grid-template-columns: 1fr; margin-top: 20px; }
+  .invited #salle-code { display: none; }
+  .invited #salle-join button { background: var(--accent); color: var(--accent-ink); border: 0; font: 900 18px var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; text-transform: none; letter-spacing: 0; padding: 13px 22px; }
+  .join-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: stretch; margin-top: 12px; }
+  #salle-code { font: 900 22px var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; letter-spacing: .3em; text-transform: uppercase; text-align: center; }
+  .room-grid { display: grid; gap: 16px; }
+  .room-grid > .card { margin: 0; }
+  .room-kicker { font-size: 11px; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); margin: 0; }
+  .room-code { font-size: clamp(72px, 22vw, 112px); line-height: 1; letter-spacing: .06em; color: var(--accent); margin: 4px 0 12px; }
+  .room-qr { background: var(--text); padding: 12px; width: 168px; margin: 0 0 12px; }
+  .room-qr svg { display: block; width: 100%; height: auto; }
+  #room-link { color: var(--text); word-break: break-all; }
+  .room-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .room-head h2 { margin-bottom: 12px; }
+  .room-players { list-style: none; padding: 0; margin: 0; }
+  .room-players li { display: grid; grid-template-columns: 44px 1fr auto; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); animation: rise .4s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 50ms); }
+  .room-players li.off { opacity: .45; }
+  .room-players .who { display: grid; min-width: 0; }
+  .room-players strong { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .room-players .status { margin: 0; }
+  .room-players li.ready .status { color: var(--text); }
+  .avatar { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; display: grid; place-items: center; background: var(--line); font: 900 20px var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; color: var(--text); }
+  button.kick { font: 400 11px var(--font-ui); text-transform: uppercase; letter-spacing: .1em; background: none; color: var(--muted); border: 1px solid var(--line); border-radius: 0; padding: 6px 10px; }
+  button.kick:hover:not(:disabled) { transform: none; box-shadow: none; color: var(--accent); border-color: var(--accent); }
+  .room-music { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+  .room-music h3 { font: 800 20px var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; margin: 0 0 8px; }
+  .room-music .actions { margin-top: 12px; }
+  .room-dz-results { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 8px; }
+  button.pick { display: grid; grid-template-columns: 44px 1fr; gap: 12px; align-items: center; width: 100%; text-align: left; border-radius: 0; padding: 8px 12px; font: 400 14px var(--font-ui); background: transparent; color: var(--text); border: 1px solid var(--line-strong); }
+  button.pick:hover:not(:disabled) { border-color: var(--text); box-shadow: 3px 3px 0 0 var(--accent); }
+  .room-chosen { font-size: 15px; margin: 0 0 6px; }
+  #room-music-chosen .back { margin: 0; }
+  #room-wait { margin-top: 18px; }
+  #room-start { font-size: 18px; padding: 13px 28px; }
+
+  /* Manches à plusieurs */
+  .room-grid.in-game .room-invite { display: none; }
+  .rg-stage { height: clamp(150px, 36vw, 220px); }
+  .rg-stage #rg-time { font-size: clamp(72px, 20vw, 120px); font-variant-numeric: tabular-nums; }
+  .rg-stage-q { position: absolute; left: 16px; bottom: 14px; font-size: 18px; opacity: .85; }
+  .rg-stage .countdown i { animation: none; }
+  .rg-q { font: 800 18px var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; margin: 18px 0 10px; }
+  .rg-owners { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+  .rg-owners button {
+    display: grid; grid-template-columns: 36px 1fr; gap: 10px; align-items: center; text-align: left; border-radius: 0;
+    padding: 8px 10px; font: 400 14px var(--font-ui); background: transparent; color: var(--text); border: 1px solid var(--line-strong); min-height: 56px;
+  }
+  .rg-owners .avatar { width: 36px; height: 36px; font-size: 16px; }
+  .rg-owners span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rg-songs { display: grid; }
+  .rg-songs button { display: grid; gap: 2px; align-content: center; }
+  .rg-songs button strong { font-weight: 500; }
+  .rg-songs button .status { margin: 0; font-size: 11px; }
+  .rg-owners button[aria-pressed="true"], .rg-songs button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); opacity: 1; }
+  .rg-songs button[aria-pressed="true"] .status { color: var(--bg); }
+  .rg-owners button:hover:not(:disabled) { border-color: var(--text); box-shadow: 3px 3px 0 0 var(--accent); }
+  .rg-owners button:disabled, .rg-songs button:disabled { opacity: .45; cursor: default; }
+  .rg-answered { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+  .rg-faces { display: flex; }
+  .rg-faces .avatar { width: 30px; height: 30px; font-size: 13px; margin-right: -6px; border: 2px solid var(--surface); transition: opacity .3s, filter .3s; }
+  .rg-faces .avatar.dim { opacity: .3; filter: grayscale(1); }
+  .rg-answered .status { margin: 0 0 0 8px; }
+  #rg-mine { min-height: 1.5em; }
+  .rv-title { font-size: clamp(26px, 7vw, 40px); line-height: 1.05; margin: 0 0 4px; }
+  .rv-owner { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 6px 0 10px; color: var(--muted); }
+  .rv-person { display: inline-flex; align-items: center; gap: 8px; color: var(--text); font-size: 18px; }
+  .rv-person .avatar { width: 40px; height: 40px; }
+  #rv-delta.neg, .delta.neg { color: var(--muted); }
+  .rg-board { list-style: none; padding: 0; margin: 14px 0 0; }
+  .rg-board li { display: grid; grid-template-columns: 24px 36px 1fr auto auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); animation: rise .4s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 60ms); }
+  .rg-board li.me { color: var(--accent); }
+  .rg-board .avatar { width: 36px; height: 36px; font-size: 15px; }
+  .rg-board .rank { color: var(--muted); font-size: 12px; }
+  .rg-board .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rg-board .delta { font-size: 12px; color: var(--accent); }
+  .rg-board strong { font: 900 20px var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; font-variant-numeric: tabular-nums; min-width: 3ch; text-align: right; }
+  .podium li:first-child { padding: 14px 0; grid-template-columns: 24px 48px 1fr auto auto; }
+  .award-who { margin: 2px 0 0; font-weight: 500; }
+  .podium li:first-child strong { font-size: 30px; color: var(--accent); }
+  .podium li:first-child .avatar { width: 48px; height: 48px; }
+  .fn-winner { font-size: clamp(36px, 10vw, 56px); line-height: 1; margin: 6px 0 4px; color: var(--accent); }
+  .awards { display: grid; gap: 10px; margin-top: 18px; }
+  .award { display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: center; border: 1px solid var(--line-strong); padding: 12px 14px; animation: rise .45s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 90ms + 200ms); }
+  .award-people { display: flex; }
+  .award-people .avatar { width: 40px; height: 40px; margin-right: -8px; border: 2px solid var(--surface); }
+  .award-title { font: 800 18px var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; margin: 0; color: var(--accent); }
+  .award .status { margin: 2px 0 0; }
+
   /* ---------- Grand écran : on garde le rythme du téléphone, en deux colonnes ---------- */
   @media (min-width: 1024px) {
     main { max-width: 1160px; padding: 56px 40px 72px; }
@@ -241,6 +335,23 @@
     .tile-main { min-height: 420px; padding: 36px; }
     .tile-main .tile-name { font-size: 132px; }
     .tile-main .tile-desc { font-size: 16px; }
+    .tile-wide { grid-template-columns: auto 1fr; column-gap: 32px; align-items: center; }
+    .tile-wide .tile-tag { grid-column: 1 / -1; }
+    .room-grid { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 24px; align-items: start; }
+    .room-invite { position: sticky; top: 24px; padding: 32px; }
+    .room-code { font-size: clamp(96px, 9vw, 136px); }
+    .room-qr { width: 220px; }
+    .room-grid.in-game { grid-template-columns: 1fr; }
+    .room-grid.in-game .room-main { padding: 28px 32px; }
+    .rg-question, .rg-reveal, .rg-final { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 36px; align-items: start; }
+    .rg-question.hidden, .rg-reveal.hidden, .rg-final.hidden { display: none !important; }
+    .rg-side { position: sticky; top: 24px; }
+    .rg-stage { height: 360px; }
+    .rg-stage #rg-time { font-size: 180px; }
+    .rg-stage-q { font-size: 28px; left: 24px; bottom: 20px; }
+    .rg-q:first-child { margin-top: 0; }
+    .reveal img { width: 160px; height: 160px; }
+    .rv-title { font-size: 48px; }
     .panel { max-width: 720px; padding: 32px 36px; }
     #login-challenge { max-width: 720px; }
 
@@ -310,8 +421,29 @@
           <span class="tile-name">Spotify</span>
           <span class="tile-desc">Connexion à ton compte Premium.</span>
         </button>
+        <button class="tile tile-wide hidden" id="tile-salle" type="button" data-open="salle" style="--i: 3">
+          <span class="tile-tag">Nouveau · à plusieurs</span>
+          <span class="tile-name">Qui écoute ça ?</span>
+          <span class="tile-desc">Chacun sur son téléphone, chacun sa musique : devinez à qui appartient chaque titre.</span>
+        </button>
       </div>
       <p class="status home-note">Rien n'est envoyé : tout se passe sur ton appareil.</p>
+    </div>
+
+    <div class="card panel hidden" data-panel="salle">
+      <button class="back" type="button">← Retour</button>
+      <h2>Qui écoute ça ?</h2>
+      <p>Chacun rejoint la salle depuis son téléphone et apporte 15 de ses titres. Un extrait passe : à qui est-il ? Le son sort de l'appareil de l'hôte.</p>
+      <label for="salle-name">Ton pseudo</label>
+      <input id="salle-name" maxlength="20" autocomplete="nickname" spellcheck="false">
+      <div class="actions"><button id="salle-create" type="button">Créer une salle</button></div>
+      <div class="or">ou rejoindre une salle</div>
+      <form id="salle-join" class="join-row">
+        <label for="salle-code" class="sr-only">Code de la salle</label>
+        <input id="salle-code" placeholder="CODE" maxlength="4" autocapitalize="characters" autocomplete="off" spellcheck="false">
+        <button type="submit" class="ghost">Rejoindre</button>
+      </form>
+      <p id="salle-status" class="status" role="status"></p>
     </div>
 
     <div class="card panel hidden" data-panel="deezer">
@@ -378,6 +510,119 @@
       <p id="login-hint" class="status hidden">Il faut un compte Spotify Premium, ajouté à l'app par l'organisateur. À ouvrir dans Chrome ou Edge sur ordinateur.</p>
       <div class="actions"><button id="btn-login">Se connecter à Spotify</button></div>
       <p id="login-error" class="status error"></p>
+    </div>
+  </section>
+
+  <section id="screen-room" class="screen hidden">
+    <div class="room-grid">
+      <div class="card room-invite">
+        <p class="room-kicker">Salle</p>
+        <p class="room-code display" id="room-code"></p>
+        <div class="room-qr hidden" id="room-qr" aria-label="QR code pour rejoindre la salle" role="img"></div>
+        <p class="status">Scanne le QR code, ou va sur <span id="room-link"></span></p>
+        <div class="actions"><button id="room-invite" class="ghost" type="button">Inviter</button></div>
+      </div>
+      <div class="card room-main">
+        <div id="room-people">
+          <div class="room-head"><h2>Joueurs</h2><span class="status" id="room-count"></span></div>
+          <ul class="room-players" id="room-players"></ul>
+        </div>
+        <p class="status" id="room-live" role="status"></p>
+
+        <div id="room-lobby">
+          <div class="room-music">
+            <h3>Ta musique</h3>
+            <div id="room-music-pick">
+              <p class="status">15 de tes titres du moment rejoignent le pot commun. Personne ne voit lesquels avant de jouer.</p>
+              <div class="actions">
+                <button id="room-use-mine" class="hidden" type="button"></button>
+                <button id="room-use-history" class="ghost hidden" type="button">Mon historique d'écoute</button>
+              </div>
+              <form id="room-dz-form" class="join-row">
+                <label for="room-dz-query" class="sr-only">Pseudo ou lien de ton profil Deezer</label>
+                <input id="room-dz-query" placeholder="Ton pseudo ou ton lien Deezer" autocomplete="off" spellcheck="false">
+                <button type="submit" class="ghost">Chercher</button>
+              </form>
+              <ul class="room-dz-results" id="room-dz-results"></ul>
+            </div>
+            <div id="room-music-chosen" class="hidden">
+              <p class="room-chosen">✓ <span id="room-music-label"></span></p>
+              <button id="room-change" class="back" type="button">Changer</button>
+            </div>
+            <p class="status" id="room-music-status" role="status"></p>
+          </div>
+          <p class="status" id="room-wait"></p>
+          <div class="actions">
+            <button id="room-start" class="hidden" type="button" disabled>Lancer la partie</button>
+            <button id="room-leave" class="ghost" type="button">Quitter la salle</button>
+          </div>
+        </div>
+
+        <div id="room-game" class="hidden">
+          <div class="topbar">
+            <span>Manche <strong id="rg-num"></strong></span>
+            <span>Score <strong id="rg-score">0</strong></span>
+          </div>
+          <div class="progress"><i id="rg-bar"></i></div>
+
+          <div id="rg-question" class="rg-question">
+            <div class="rg-side">
+              <div class="stage rg-stage playing">
+                <span class="stage-big display" id="rg-time">20</span>
+                <span class="rg-stage-q display">Qui écoute ça ?</span>
+                <div class="countdown" id="rg-countdown"><i></i></div>
+              </div>
+              <div class="controls hidden" id="rg-host">
+                <button id="rg-replay" class="ghost" type="button">Réécouter</button>
+                <span class="status" id="rg-sound" role="status"></span>
+              </div>
+              <div class="rg-answered" aria-live="polite">
+                <div class="rg-faces" id="rg-answered"></div>
+                <span class="status" id="rg-answered-text"></span>
+              </div>
+            </div>
+            <div class="rg-answers">
+              <h3 class="rg-q">À qui est ce titre ?</h3>
+              <div class="rg-owners" id="rg-owners"></div>
+              <h3 class="rg-q">Quel titre ?</h3>
+              <div class="choices rg-songs" id="rg-songs"></div>
+              <p class="status" id="rg-mine" role="status"></p>
+            </div>
+          </div>
+
+          <div id="rg-reveal" class="hidden rg-reveal">
+            <div class="rg-side">
+              <div class="reveal">
+                <img id="rv-cover" alt="">
+                <div><p class="rv-title display" id="rv-title"></p><p class="status" id="rv-artist" style="margin:0"></p></div>
+              </div>
+              <p class="rv-owner"><span id="rv-owners-label">C'était à</span> <span id="rv-owners"></span></p>
+              <p class="big" id="rv-delta"></p>
+              <p class="status" id="rv-detail"></p>
+            </div>
+            <div>
+              <ol class="rg-board" id="rv-board"></ol>
+              <div class="actions"><button id="rv-next" class="hidden" type="button">Manche suivante</button><span class="status" id="rv-wait"></span></div>
+            </div>
+          </div>
+
+          <div id="rg-final" class="hidden rg-final">
+            <div>
+              <p class="fn-winner display" id="fn-winner"></p>
+              <ol class="rg-board podium" id="fn-board"></ol>
+            </div>
+            <div>
+              <div class="awards" id="fn-awards"></div>
+              <p class="status" id="fn-wait"></p>
+              <div class="actions">
+                <button id="fn-replay" class="hidden" type="button">Rejouer</button>
+                <button id="fn-leave" class="ghost" type="button">Quitter la salle</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p id="room-error" class="status error" role="alert"></p>
+      </div>
     </div>
   </section>
 
@@ -558,12 +803,13 @@
   </footer>
 </main>
 <!-- Change ?v= on each release: a fresh page then never runs scripts kept in the browser cache. -->
-<script src="config.js?v=8"></script>
-<script src="stats.js?v=8"></script>
-<script src="scoring.js?v=8"></script>
-<script src="challenge.js?v=8"></script>
-<script src="history.js?v=8"></script>
-<script src="deezer.js?v=8"></script>
-<script src="app.js?v=8"></script>
+<script src="config.js?v=10"></script>
+<script src="stats.js?v=10"></script>
+<script src="scoring.js?v=10"></script>
+<script src="challenge.js?v=10"></script>
+<script src="history.js?v=10"></script>
+<script src="deezer.js?v=10"></script>
+<script src="room.js?v=10"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>

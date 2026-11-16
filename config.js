@@ -9,3 +9,8 @@ const STATS = {
   umamiId: '',
   goatcounter: '',
 };
+
+// Adresse du serveur des salles « Qui écoute ça ? » (dossier server/, après `npm run deploy`),
+// par exemple 'https://blindtest-salles.monnom.workers.dev'. Vide = le mode est caché en ligne ;
+// en local, le serveur de développement (http://127.0.0.1:8787) est utilisé.
+const ROOMS_URL = '';

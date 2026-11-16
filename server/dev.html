@@ -1,0 +1,73 @@
+<!doctype html>
+<!-- Test page for the room server: each frame below plays one phone. Open it from the local site
+     (python -m http.server 8888 at the repo root → http://127.0.0.1:8888/server/dev.html) with `npm run dev` running. -->
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Salles : test</title>
+<style>
+  :root { --bg: #0e0d0c; --surface: #1c1a18; --text: #efe6d3; --muted: #8c877d; --accent: #ff6614; --line: rgba(239, 230, 211, .18); color-scheme: dark; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--text); font: 13px/1.5 ui-monospace, monospace; }
+  .phones { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .phone { background: var(--surface); border: 1px solid var(--line); padding: 12px; }
+  input, button { font: inherit; padding: 6px 10px; background: transparent; color: var(--text); border: 1px solid var(--line); }
+  button { cursor: pointer; } button:hover { border-color: var(--accent); }
+  ul { padding-left: 18px; } .off { color: var(--muted); } .host { color: var(--accent); }
+  pre { white-space: pre-wrap; color: var(--muted); max-height: 140px; overflow: auto; font-size: 11px; }
+</style>
+</head>
+<body>
+<p>Serveur : <input id="server" value="http://127.0.0.1:8787" size="28"> <button id="create">Créer une salle</button> code <input id="code" size="5"> <button id="add">+ téléphone</button></p>
+<div class="phones" id="phones"></div>
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+let hostKey = '';
+let n = 0;
+
+$('#create').onclick = async () => {
+  const res = await fetch($('#server').value + '/rooms', { method: 'POST' }).then((r) => r.json());
+  $('#code').value = res.code;
+  hostKey = res.hostKey;
+};
+
+$('#add').onclick = () => {
+  const i = ++n;
+  const box = document.createElement('div');
+  box.className = 'phone';
+  box.innerHTML = `<b>Téléphone ${i}</b> <input class="name" value="Joueur ${i}" size="10">
+    <button class="join">Rejoindre</button> <button class="drop">Couper</button> <button class="back">Revenir</button>
+    <button class="start">Lancer</button> <button class="leave">Quitter</button>
+    <ul class="players"></ul><pre class="log"></pre>`;
+  $('#phones').append(box);
+  let ws = null;
+  let token = '';
+  const myKey = hostKey; // the first phone after "Créer" carries the host key
+  hostKey = '';
+  const log = (m) => { $('.log', box).textContent = m + '\n' + $('.log', box).textContent; };
+  const send = (m) => ws?.send(JSON.stringify(m));
+  const open = () => {
+    ws = new WebSocket($('#server').value.replace(/^http/, 'ws') + `/rooms/${$('#code').value}/ws`);
+    ws.onopen = () => send({ t: 'hello', name: $('.name', box).value, token, hostKey: myKey });
+    ws.onmessage = (e) => {
+      const m = JSON.parse(e.data);
+      log(e.data);
+      if (m.t === 'welcome') token = m.you.token;
+      if (m.t === 'room') {
+        $('.players', box).innerHTML = m.players.map((p) =>
+          `<li class="${p.online ? '' : 'off'} ${p.host ? 'host' : ''}">${p.name}${p.host ? ' (hôte)' : ''}${p.online ? '' : ' · hors ligne'}
+           <button data-kick="${p.id}">retirer</button></li>`).join('') + `<li>phase : ${m.phase}</li>`;
+      }
+    };
+    ws.onclose = (e) => log(`fermé ${e.code} ${e.reason}`);
+  };
+  $('.join', box).onclick = open;
+  $('.drop', box).onclick = () => ws?.close();
+  $('.back', box).onclick = open;
+  $('.start', box).onclick = () => send({ t: 'start' });
+  $('.leave', box).onclick = () => send({ t: 'leave' });
+  $('.players', box).onclick = (e) => { if (e.target.dataset.kick) send({ t: 'kick', id: e.target.dataset.kick }); };
+};
+</script>
+</body>
+</html>
