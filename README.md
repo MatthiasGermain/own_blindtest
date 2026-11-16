@@ -31,6 +31,19 @@ Tout se passe dans le navigateur. Il n'y a pas de serveur ni de compte, et ton h
 
 ---
 
+## Auteur
+
+Conçu et développé par **Matthias Germain**.
+
+- Portfolio : https://matthias-germain.vercel.app
+- GitHub : https://github.com/MatthiasGermain
+
+Une idée, un bug ? Ouvre une [issue](https://github.com/MatthiasGermain/own_blindtest/issues).
+
+Le code est sous licence [MIT](LICENSE).
+
+---
+
 ## Pour les développeurs
 
 Site statique en JavaScript, sans dépendance ni étape de build.
@@ -44,6 +57,7 @@ scoring.js     barème (textes tolérants, années, artistes multiples)
 challenge.js   liens de défi (JSON compressé dans l'URL)
 stats.js       mesure d'audience sans cookies (Umami ou GoatCounter)
 config.js      Client ID Spotify et compte de mesure d'audience
+og.jpg         image d'aperçu des liens partagés (source : tools/og-image.html)
 ```
 
 ### Lancer en local
@@ -63,4 +77,4 @@ Le site est servi par GitHub Pages depuis `main`. Avant chaque mise en ligne, **
 - `SPOTIFY_CLIENT_ID` : l'app créée sur developer.spotify.com. Son Redirect URI doit être l'adresse exacte du site.
 - `STATS.umamiId` ou `STATS.goatcounter` : le compte de mesure d'audience. Vide, rien n'est envoyé.
 
-Événements mesurés : `source-ouverte`, `deezer-connecte`, `historique-importe`, `spotify-connexion`, `spotify-refuse`, `partie-lancee`, `partie-finie`, `partage`, `defi-ouvert`, `erreur-source`.
+Événements mesurés : `source-ouverte`, `deezer-connecte`, `historique-importe`, `spotify-connexion`, `spotify-refuse`, `partie-lancee`, `partie-finie`, `partage`, `defi-ouvert`, `erreur-source`, `lien-auteur`.

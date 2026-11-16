@@ -1084,6 +1084,8 @@ async function main() {
   $('#btn-retry').onclick = () => { store.del('liked'); location.reload(); };
   $('#btn-reload').onclick = () => loadSource(true);
   $('#btn-home').onclick = () => goHome();
+  // Does the game bring visitors to the portfolio?
+  for (const a of document.querySelectorAll('[data-credit]')) a.addEventListener('click', () => Stats.track('lien-auteur', { lien: a.dataset.credit }));
   for (const tile of document.querySelectorAll('[data-open]')) {
     tile.onclick = () => { Stats.track('source-ouverte', { source: tile.dataset.open }); openPanel(tile.dataset.open); };
   }

@@ -1,0 +1,69 @@
+<!doctype html>
+<!-- Source of og.jpg, the preview shown when a link to the game is shared. Render it at 1200×630:
+     msedge --headless --hide-scrollbars --window-size=1200,630 --virtual-time-budget=8000 --screenshot=og.png tools/og-image.html
+     then save og.png as og.jpg (quality 85): the grain makes the PNG five times heavier. -->
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Aperçu Blindtest</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Fraunces:opsz,wght,SOFT,WONK@9..144,400..900,0..100,0..1&display=block">
+<style>
+  :root {
+    --bg: #0e0d0c; --surface: #1c1a18; --text: #efe6d3; --muted: #8c877d; --accent: #ff6614;
+    --line: rgba(239, 230, 211, .18);
+    --noise: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .22 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1200px; height: 630px; overflow: hidden; background: var(--bg); color: var(--text); font-family: "DM Mono", monospace; }
+  body { position: relative; padding: 52px 72px 44px; display: grid; grid-template-columns: 1fr 300px; grid-template-rows: 1fr auto; column-gap: 64px; }
+  body::before { content: ""; position: absolute; inset: 0; background: var(--noise); background-size: 160px; opacity: .45; pointer-events: none; z-index: 2; }
+  body::after { content: ""; position: absolute; right: -180px; bottom: -260px; width: 760px; height: 760px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 102, 20, .32), rgba(255, 102, 20, 0) 65%); z-index: 0; }
+  .left, .right, footer { position: relative; z-index: 1; }
+
+  .left { display: flex; flex-direction: column; justify-content: center; }
+  h1 { font-family: "Fraunces", serif; font-weight: 900; font-variation-settings: "SOFT" 100, "WONK" 1, "opsz" 144;
+    font-size: 168px; line-height: .9; letter-spacing: -0.04em; }
+  .sub { margin-top: 26px; color: var(--muted); font-weight: 300; font-size: 24px; letter-spacing: .16em; text-transform: uppercase; }
+  .pitch { margin-top: 34px; font-size: 25px; line-height: 1.45; max-width: 600px; }
+  .pitch b { color: var(--accent); font-weight: 500; }
+
+  /* The share grid a player posts after a game: one row per track, one square per question. */
+  .right { align-self: center; background: var(--surface); border: 1px solid var(--line); padding: 24px 28px 22px; }
+  .score { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px;
+    font-size: 16px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  .score strong { font-family: "Fraunces", serif; font-weight: 900; font-variation-settings: "SOFT" 100, "WONK" 1; font-size: 46px; letter-spacing: -0.02em; color: var(--text); }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .grid i { aspect-ratio: 1; background: #2b2825; }
+  .grid i.ok { background: var(--accent); }
+  .grid i.half { background: #7a3a14; }
+  .cta { margin-top: 16px; font-size: 16px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+
+  footer { grid-column: 1 / -1; display: flex; justify-content: space-between; padding-top: 20px; border-top: 1px solid var(--line);
+    font-size: 17px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  footer b { color: var(--text); font-weight: 500; }
+</style>
+</head>
+<body>
+  <div class="left">
+    <h1>Blindtest</h1>
+    <p class="sub">Ta musique, à l'aveugle</p>
+    <p class="pitch">Un extrait de <b>tes</b> morceaux. Trouve l'artiste, le titre, l'album… puis défie tes potes.</p>
+  </div>
+  <div class="right" aria-hidden="true">
+    <p class="score"><span>Score</span><strong>34/50</strong></p>
+    <div class="grid">
+      <i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="half"></i>
+      <i class="ok"></i><i class="ok"></i><i></i><i class="half"></i>
+      <i class="ok"></i><i class="half"></i><i class="ok"></i><i class="ok"></i>
+      <i></i><i class="half"></i><i></i><i class="half"></i>
+      <i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i>
+    </div>
+    <p class="cta">Tu fais mieux ?</p>
+  </div>
+  <footer>
+    <span>Deezer · Spotify · YouTube Music</span>
+    <span>par <b>Matthias Germain</b></span>
+  </footer>
+</body>
+</html>
