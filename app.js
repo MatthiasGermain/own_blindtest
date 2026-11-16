@@ -44,6 +44,7 @@ async function login() {
   const clientId = SPOTIFY_CLIENT_ID || $('#client-id').value.trim();
   if (!clientId) { $('#login-error').textContent = 'Colle ton Client ID.'; return; }
   store.set('clientId', clientId);
+  Stats.track('spotify-connexion');
   const verifier = randomString(64);
   const state = randomString(16);
   store.set('pkce', { verifier, state });
@@ -112,6 +113,7 @@ async function api(path, opts = {}) {
     const fallback = res.status >= 500 ? `Spotify ne répond pas (${res.status})` : `Spotify ${res.status}`;
     const msg = data?.error?.message || plain || fallback;
     if (res.status === 403 && /regist/i.test(msg)) {
+      if ($('#screen-denied').classList.contains('hidden')) Stats.track('spotify-refuse');
       show('screen-denied');
       throw Object.assign(new Error("ton compte Spotify n'est pas autorisé sur cette app."), { notRegistered: true });
     }
@@ -258,6 +260,7 @@ async function connectDeezer(e) {
   try {
     const user = await Deezer.profile.user(id);
     store.set('deezerUser', user);
+    Stats.track('deezer-connecte');
     deezerPlaylists = null;
     $('#opt-playlist').dataset.from = '';
     store.set('source', 'dztop');
@@ -330,6 +333,7 @@ async function loadSource(force = false) {
     updateStartButton();
   } catch (e) {
     if (seq !== loadSeq || e.notRegistered) return;
+    Stats.track('erreur-source', { source: source.split(':')[0] });
     status.textContent = `Erreur (${e.message}). Clique sur « Recharger » pour réessayer.`;
     status.classList.add('error');
   }
@@ -487,6 +491,7 @@ async function importHistory(files) {
     store.set('history', h);
     if (!store.get('history')) throw new Error('ton navigateur refuse de garder les données');
     store.set('source', 'history');
+    Stats.track('historique-importe', { format: h.tracks.some((t) => t.u) ? 'etendu' : 'annee' });
     enterSetup();
   } catch (e) {
     status.textContent = `Import impossible : ${e.message}.`;
@@ -630,9 +635,13 @@ function shuffle(arr) {
 
 const TOP_NAMES = { short_term: 'Top 4 semaines', medium_term: 'Top 6 mois', long_term: 'Top de toujours' };
 
+// The same few facts describe every game in the stats.
+const gameFacts = () => ({ source: game.kind, mode: game.mode, reponses: game.answers, defi: game.challenge ? 'oui' : 'non' });
+
 function beginGame(settings) {
   game = { index: 0, results: [], pool: [], challenge: null, fixedStarts: false, engine: 'spotify', answers: 'type', ...settings };
   game.library ??= game.tracks;
+  Stats.track('partie-lancee', gameFacts());
   activePlayer().activateElement();
   show('screen-round');
   startRound();
@@ -856,6 +865,7 @@ function endGame() {
     el('strong', { textContent: `${r.total}` }),
   ])));
   show('screen-end');
+  Stats.track('partie-finie', { ...gameFacts(), titres: String(game.results.length), score: Stats.bucket(total, max) });
   prepareShare(mine, max, grid);
 }
 
@@ -934,6 +944,7 @@ async function prepareShare(score, max, grid) {
 }
 
 async function shareGame() {
+  Stats.track('partage', { ...gameFacts(), lien: game.engine === 'deezer' ? 'non' : 'oui' });
   const feedback = $('#share-feedback');
   if (navigator.share && matchMedia('(pointer: coarse)').matches) {
     try { await navigator.share({ text: game.shareText }); return; } catch (e) { if (e.name === 'AbortError') return; }
@@ -978,7 +989,11 @@ function captureChallenge() {
   const saved = store.get('challengeCode');
   if (!saved) return;
   Challenge.decode(saved)
-    .then((c) => { pendingChallenge = c; showChallenge(); })
+    .then((c) => {
+      pendingChallenge = c;
+      showChallenge();
+      if (code) Stats.track('defi-ouvert', { mode: c.mode, reponses: c.answers });
+    })
     .catch(() => store.del('challengeCode'));
 }
 
@@ -987,6 +1002,20 @@ function updateModeHint() {
   store.set('mode', $('#opt-mode').value);
   $('#mode-hint').classList.toggle('hidden', !sudden);
   $('#count-wrap').classList.toggle('hidden', sudden);
+}
+
+/* ---------- Accueil ---------- */
+
+// The home screen shows one tile per source; a tile opens its own panel, like a screen in an app.
+function openPanel(name) {
+  $('#home-pick').classList.toggle('hidden', !!name);
+  for (const p of document.querySelectorAll('#screen-login [data-panel]')) p.classList.toggle('hidden', p.dataset.panel !== name);
+  window.scrollTo(0, 0);
+}
+
+function goHome(panel = null) {
+  openPanel(panel);
+  show('screen-login');
 }
 
 /* ---------- Démarrage ---------- */
@@ -1040,7 +1069,11 @@ async function main() {
   $('#btn-logout-denied').onclick = logout;
   $('#btn-retry').onclick = () => { store.del('liked'); location.reload(); };
   $('#btn-reload').onclick = () => loadSource(true);
-  $('#btn-home').onclick = () => show('screen-login');
+  $('#btn-home').onclick = () => goHome();
+  for (const tile of document.querySelectorAll('[data-open]')) {
+    tile.onclick = () => { Stats.track('source-ouverte', { source: tile.dataset.open }); openPanel(tile.dataset.open); };
+  }
+  for (const back of document.querySelectorAll('#screen-login .back')) back.onclick = () => openPanel(null);
   $('#history-file').onchange = (e) => { if (e.target.files.length) importHistory([...e.target.files]); };
   $('#deezer-form').onsubmit = connectDeezer;
   $('#deezer-profile').value = store.get('deezerUser') ? `deezer.com/profile/${store.get('deezerUser').id}` : '';
@@ -1093,7 +1126,9 @@ async function main() {
     store.del('token');
     $('#login-error').textContent = "Nouvelle version : reconnecte-toi pour autoriser l'accès à tes playlists et à tes plus écoutés.";
   }
-  if (!store.get('token') && !store.get('history') && !store.get('deezerUser')) { show('screen-login'); return; }
+  // A failed Spotify login lands back on its own panel, where the error is shown.
+  if ($('#login-error').textContent) { goHome('spotify'); return; }
+  if (!store.get('token') && !store.get('history') && !store.get('deezerUser')) { goHome(); return; }
   enterSetup();
 }
 

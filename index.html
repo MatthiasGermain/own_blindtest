@@ -103,6 +103,35 @@
   .challenge-title { font-size: 26px; line-height: 1.1; margin: 0 0 6px; color: var(--text); }
   .challenge .actions { margin-top: 14px; }
 
+  /* ---------- Accueil : une tuile par source, chacune ouvre son panneau ---------- */
+  .home-title { font-size: clamp(30px, 7vw, 40px); margin-bottom: 18px; }
+  .tiles { display: grid; gap: 12px; }
+  .tile {
+    display: grid; gap: 6px; align-content: start; width: 100%; text-align: left; padding: 22px 22px 20px; border-radius: 0;
+    font: inherit; background: var(--surface); color: var(--text); border: 1px solid var(--line-strong);
+    animation: rise .5s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 80ms);
+  }
+  .tile:hover:not(:disabled) { transform: translate(-3px, -3px); box-shadow: 5px 5px 0 0 var(--accent); }
+  .tile-name { font: 900 clamp(42px, 11vw, 60px)/.95 var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1, "opsz" 144; letter-spacing: -0.03em; }
+  .tile-tag { font-size: 10px; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); }
+  .tile-desc { font-size: 13px; line-height: 1.45; color: var(--muted); }
+  .tile-main { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .tile-main .tile-tag, .tile-main .tile-desc { color: var(--accent-ink); opacity: .78; }
+  .tile-main:hover:not(:disabled) { box-shadow: 5px 5px 0 0 var(--text); }
+  @media (min-width: 620px) {
+    .tiles { grid-template-columns: 1.25fr 1fr; }
+    .tile-main { grid-row: span 2; align-content: end; padding-bottom: 26px; }
+    .tile-main .tile-name { font-size: 76px; }
+  }
+  .home-note { margin-top: 16px; }
+  .panel { animation: slide .45s var(--ease-out) both; }
+  @keyframes slide { from { opacity: 0; transform: translateX(28px); } }
+  button.back {
+    font: 400 12px var(--font-ui); text-transform: uppercase; letter-spacing: .1em;
+    background: none; color: var(--muted); padding: 0; margin: 0 0 18px; border-radius: 0;
+  }
+  button.back:hover:not(:disabled) { transform: none; box-shadow: none; color: var(--text); }
+
   /* ---------- Manche ---------- */
   .topbar { display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); }
   .topbar strong { font: 900 22px var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; letter-spacing: 0; color: var(--text); text-transform: none; display: inline-block; margin-left: 6px; font-variant-numeric: tabular-nums; }
@@ -201,54 +230,86 @@
     <p class="sub">Ta musique, à l'aveugle</p>
   </header>
 
-  <section id="screen-login" class="card screen hidden">
+  <section id="screen-login" class="screen hidden">
     <div id="login-challenge" class="challenge hidden"><p class="challenge-title display" id="login-challenge-title"></p><p class="status" style="margin:0">Connecte-toi pour relever le défi.</p></div>
-    <h2>Ton historique, en blindtest</h2>
-    <p>Dépose les données d'écoute que Spotify t'envoie : chaque titre, combien de fois tu l'as écouté, depuis quand. Tout est analysé sur ton appareil, rien n'est envoyé.</p>
-    <label for="history-file">Fichier de données Spotify (.zip ou .json)</label>
-    <input id="history-file" type="file" accept=".zip,.json,application/zip,application/json" multiple>
-    <p id="history-status" class="status"></p>
-    <details class="howto">
-      <summary>Comment obtenir ce fichier ?</summary>
-      <ol>
-        <li>Sur spotify.com, ouvre <em>Compte</em> → <em>Confidentialité</em>.</li>
-        <li>Coche <strong>Historique de streaming étendu</strong>, puis demande les données.</li>
-        <li>Confirme l'e-mail. Spotify envoie le fichier sous quelques jours (jusqu'à 30).</li>
-        <li>Dépose ici le ZIP reçu, sans le décompresser.</li>
-      </ol>
-    </details>
-    <div class="or"><span>ou</span></div>
-    <h2>Avec ton profil Deezer</h2>
-    <p>Colle le lien de ton profil : on joue sur ton top, tes coups de cœur et tes playlists. Pas de mot de passe.</p>
-    <form id="deezer-form">
-      <label for="deezer-profile">Lien de ton profil Deezer</label>
-      <input id="deezer-profile" placeholder="deezer.com/fr/profile/123456789" autocomplete="off" spellcheck="false" inputmode="url">
-      <div class="actions"><button id="btn-deezer" type="submit">Jouer avec Deezer</button></div>
-    </form>
-    <p id="deezer-status" class="status"></p>
-    <details class="howto">
-      <summary>Où trouver ce lien ?</summary>
-      <ol>
-        <li>Sur <em>deezer.com</em>, connecte-toi et clique sur ta photo puis <em>Mon profil</em>.</li>
-        <li>Copie l'adresse de la page : elle contient <code>/profile/</code> suivi de chiffres.</li>
-        <li>Si rien ne s'affiche ensuite : dans <em>Paramètres</em> → <em>Confidentialité</em>, rends ton profil public.</li>
-      </ol>
-    </details>
-    <div class="or"><span>ou</span></div>
-    <h2>Avec ton compte Spotify</h2>
-    <p class="status" style="margin-top:-12px">Réservé aux testeurs ajoutés par l'organisateur.</p>
-    <div id="login-setup">
-      <ol>
-        <li>Crée une app sur <code>developer.spotify.com/dashboard</code> (API : <em>Web API</em> + <em>Web Playback SDK</em>).</li>
-        <li>Ajoute ce Redirect URI exact : <code id="redirect-uri"></code></li>
-        <li>Colle le <strong>Client ID</strong> ci-dessous.</li>
-      </ol>
-      <label for="client-id">Client ID</label>
-      <input id="client-id" autocomplete="off" spellcheck="false">
+
+    <div id="home-pick">
+      <h2 class="home-title">D'où vient ta musique ?</h2>
+      <div class="tiles">
+        <button class="tile tile-main" type="button" data-open="deezer" style="--i: 0">
+          <span class="tile-tag">Immédiat · sans mot de passe</span>
+          <span class="tile-name">Deezer</span>
+          <span class="tile-desc">Ton top, tes coups de cœur, tes playlists.</span>
+        </button>
+        <button class="tile" type="button" data-open="file" style="--i: 1">
+          <span class="tile-tag">Le plus personnel</span>
+          <span class="tile-name">Fichier</span>
+          <span class="tile-desc">Ton historique Spotify complet, depuis ton premier jour.</span>
+        </button>
+        <button class="tile" type="button" data-open="spotify" style="--i: 2">
+          <span class="tile-tag">Testeurs seulement</span>
+          <span class="tile-name">Spotify</span>
+          <span class="tile-desc">Connexion à ton compte Premium.</span>
+        </button>
+      </div>
+      <p class="status home-note">Rien n'est envoyé : tout se passe sur ton appareil.</p>
     </div>
-    <p id="login-hint" class="status hidden">Il faut un compte Spotify Premium, ajouté à l'app par l'organisateur. À ouvrir dans Chrome ou Edge sur ordinateur.</p>
-    <div class="actions"><button id="btn-login" class="ghost">Se connecter à Spotify</button></div>
-    <p id="login-error" class="status error"></p>
+
+    <div class="card panel hidden" data-panel="deezer">
+      <button class="back" type="button">← Retour</button>
+      <h2>Ton profil Deezer</h2>
+      <p>Colle le lien de ton profil, c'est tout : pas de mot de passe, pas d'appli à installer.</p>
+      <form id="deezer-form">
+        <label for="deezer-profile">Lien de ton profil Deezer</label>
+        <input id="deezer-profile" placeholder="deezer.com/fr/profile/123456789" autocomplete="off" spellcheck="false" inputmode="url">
+        <div class="actions"><button id="btn-deezer" type="submit">Jouer avec Deezer</button></div>
+      </form>
+      <p id="deezer-status" class="status"></p>
+      <details class="howto">
+        <summary>Où trouver ce lien ?</summary>
+        <ol>
+          <li>Sur <em>deezer.com</em>, connecte-toi et clique sur ta photo puis <em>Mon profil</em>.</li>
+          <li>Copie l'adresse de la page : elle contient <code>/profile/</code> suivi de chiffres.</li>
+          <li>Si rien ne s'affiche ensuite : dans <em>Paramètres</em> → <em>Confidentialité</em>, rends ton profil public.</li>
+        </ol>
+      </details>
+    </div>
+
+    <div class="card panel hidden" data-panel="file">
+      <button class="back" type="button">← Retour</button>
+      <h2>Ton historique Spotify</h2>
+      <p>Dépose les données d'écoute que Spotify t'envoie sur demande : chaque titre et l'année où tu l'as découvert. Tout est analysé sur ton appareil.</p>
+      <label for="history-file">Fichier de données Spotify (.zip ou .json)</label>
+      <input id="history-file" type="file" accept=".zip,.json,application/zip,application/json" multiple>
+      <p id="history-status" class="status"></p>
+      <details class="howto">
+        <summary>Comment obtenir ce fichier ?</summary>
+        <ol>
+          <li>Sur spotify.com, ouvre <em>Compte</em> → <em>Confidentialité</em>.</li>
+          <li>Coche <strong>Historique de streaming étendu</strong>, puis demande les données.</li>
+          <li>Confirme l'e-mail. Spotify envoie le fichier sous quelques jours (jusqu'à 30).</li>
+          <li>Dépose ici le ZIP reçu, sans le décompresser.</li>
+        </ol>
+      </details>
+    </div>
+
+    <div class="card panel hidden" data-panel="spotify">
+      <button class="back" type="button">← Retour</button>
+      <h2>Ton compte Spotify</h2>
+      <p class="status" style="margin-top:-12px">Réservé aux testeurs ajoutés par l'organisateur.</p>
+      <div id="login-setup">
+        <ol>
+          <li>Crée une app sur <code>developer.spotify.com/dashboard</code> (API : <em>Web API</em> + <em>Web Playback SDK</em>).</li>
+          <li>Ajoute ce Redirect URI exact : <code id="redirect-uri"></code></li>
+          <li>Colle le <strong>Client ID</strong> ci-dessous.</li>
+        </ol>
+        <label for="client-id">Client ID</label>
+        <input id="client-id" autocomplete="off" spellcheck="false">
+      </div>
+      <p id="login-hint" class="status hidden">Il faut un compte Spotify Premium, ajouté à l'app par l'organisateur. À ouvrir dans Chrome ou Edge sur ordinateur.</p>
+      <div class="actions"><button id="btn-login">Se connecter à Spotify</button></div>
+      <p id="login-error" class="status error"></p>
+    </div>
   </section>
 
   <section id="screen-setup" class="card screen hidden">
@@ -406,11 +467,12 @@
   </section>
 </main>
 <!-- Change ?v= on each release: a fresh page then never runs scripts kept in the browser cache. -->
-<script src="config.js?v=4"></script>
-<script src="scoring.js?v=4"></script>
-<script src="challenge.js?v=4"></script>
-<script src="history.js?v=4"></script>
-<script src="deezer.js?v=4"></script>
-<script src="app.js?v=4"></script>
+<script src="config.js?v=5"></script>
+<script src="stats.js?v=5"></script>
+<script src="scoring.js?v=5"></script>
+<script src="challenge.js?v=5"></script>
+<script src="history.js?v=5"></script>
+<script src="deezer.js?v=5"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>
