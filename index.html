@@ -225,6 +225,49 @@
   .recap span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .recap strong { font: 900 18px var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; }
 
+  /* ---------- Grand écran : on garde le rythme du téléphone, en deux colonnes ---------- */
+  @media (min-width: 1024px) {
+    main { max-width: 1160px; padding: 56px 40px 72px; }
+    header { display: flex; align-items: baseline; gap: 28px; margin-bottom: 40px; }
+    h1 { font-size: 72px; }
+    .sub { margin: 0; }
+    h2 { font-size: 32px; }
+
+    .home-title { font-size: 56px; margin-bottom: 28px; }
+    .tiles { grid-template-columns: 1.5fr 1fr; gap: 16px; }
+    .tile { padding: 28px; }
+    .tile-name { font-size: 64px; }
+    .tile-desc { font-size: 14px; }
+    .tile-main { min-height: 420px; padding: 36px; }
+    .tile-main .tile-name { font-size: 132px; }
+    .tile-main .tile-desc { font-size: 16px; }
+    .panel { max-width: 720px; padding: 32px 36px; }
+    #login-challenge { max-width: 720px; }
+
+    #screen-setup { padding: 36px 40px; }
+    .setup-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 56px; }
+    .setup-col > label.first { margin-top: 0; }
+    .setup-col:last-child { border-left: 1px solid var(--line); padding-left: 56px; }
+    #screen-setup .actions { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--line); }
+    #btn-start { font-size: 20px; padding: 14px 32px; }
+
+    .topbar strong { font-size: 30px; }
+    .round-body { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+    .round-media { position: sticky; top: 24px; }
+    .stage { height: 440px; }
+    #stage-num { font-size: 220px; }
+    #stage-num small { font-size: 20px; }
+    .stage-title { font-size: 68px; }
+    .round-play { margin: 0; padding: 28px; }
+    .choices button { min-height: 60px; font-size: 14px; }
+
+    #screen-end { padding: 36px 40px; }
+    .end-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 56px; align-items: start; }
+    #screen-end .big { font-size: 140px; }
+    .recap { margin: 0; max-height: 640px; overflow-y: auto; padding-right: 8px; }
+    .recap li:first-child { border-top: 0; }
+  }
+
   @media (max-width: 480px) {
     .row { grid-template-columns: 1fr; }
     .card { padding: 18px; }
@@ -348,6 +391,8 @@
       </div>
     </div>
     <h2>Préparer la partie</h2>
+    <div class="setup-cols">
+    <div class="setup-col">
     <label for="opt-mode">Mode</label>
     <select id="opt-mode">
       <option value="classic">Classique : un nombre de titres fixe</option>
@@ -377,7 +422,9 @@
     </div>
     <p id="source-status" class="status">Chargement…</p>
     <p id="player-status" class="status">Initialisation du lecteur…</p>
-    <label>Champs à deviner</label>
+    </div>
+    <div class="setup-col">
+    <label class="first">Champs à deviner</label>
     <div id="opt-fields" class="fields">
       <label data-sources="history liked top playlist dztop dzliked dzplaylist"><input type="checkbox" value="artist"> Artiste</label>
       <label data-sources="history liked top playlist dztop dzliked dzplaylist"><input type="checkbox" value="title"> Titre</label>
@@ -406,6 +453,8 @@
       <option value="random" selected>Au hasard dans le morceau</option>
       <option value="begin">Début du morceau</option>
     </select>
+    </div>
+    </div>
     <div class="actions">
       <button id="btn-start" disabled>Lancer le blindtest</button>
       <button id="btn-reload" class="ghost">Recharger</button>
@@ -436,6 +485,8 @@
     </div>
     <div class="progress" id="round-progress-bar"><i id="round-progress"></i></div>
     <p id="round-target" class="status hidden" style="margin:-6px 0 12px"></p>
+    <div class="round-body">
+    <div class="round-media">
     <div id="stage" class="stage">
       <span id="stage-num" class="stage-big display"></span>
       <span id="stage-title" class="stage-big stage-title display"></span>
@@ -449,7 +500,8 @@
     </div>
     <p id="round-loading" class="status hidden">Chargement du son…</p>
     <p id="round-error" class="status error"></p>
-    <div class="card">
+    </div>
+    <div class="card round-play">
       <form id="guess-form" autocomplete="off">
         <div class="row">
           <div data-field="artist"><label for="g-artist" id="label-artist" style="margin-top:0">Artiste</label><input class="typed" id="g-artist"></div>
@@ -474,9 +526,12 @@
         <div class="actions"><button id="btn-next" type="button">Suivant</button></div>
       </div>
     </div>
+    </div>
   </section>
 
   <section id="screen-end" class="card screen hidden">
+    <div class="end-body">
+    <div class="end-main">
     <h2 id="end-title">Fini !</h2>
     <p class="big" id="end-score"></p>
     <p class="status" id="end-detail"></p>
@@ -488,7 +543,9 @@
       <input id="share-link" readonly aria-label="Lien du défi">
       <p id="share-feedback" class="status"></p>
     </div>
+    </div>
     <ul class="recap" id="end-recap"></ul>
+    </div>
     <div class="actions"><button id="btn-again" class="ghost">Nouvelle partie</button></div>
   </section>
 
@@ -501,12 +558,12 @@
   </footer>
 </main>
 <!-- Change ?v= on each release: a fresh page then never runs scripts kept in the browser cache. -->
-<script src="config.js?v=7"></script>
-<script src="stats.js?v=7"></script>
-<script src="scoring.js?v=7"></script>
-<script src="challenge.js?v=7"></script>
-<script src="history.js?v=7"></script>
-<script src="deezer.js?v=7"></script>
-<script src="app.js?v=7"></script>
+<script src="config.js?v=8"></script>
+<script src="stats.js?v=8"></script>
+<script src="scoring.js?v=8"></script>
+<script src="challenge.js?v=8"></script>
+<script src="history.js?v=8"></script>
+<script src="deezer.js?v=8"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>
