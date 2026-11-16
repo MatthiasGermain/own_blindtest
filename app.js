@@ -363,9 +363,12 @@ function buildOptions(field, t) {
   if (!right) return null;
   const byArtist = (x) => x !== t && x.artists.some((a) => t.artists.some((b) => sameText(a, b)));
   const others = game.library.filter((x) => x !== t && !byArtist(x));
+  const sameArtist = shuffle(game.library.filter(byArtist)).map((x) => answerText(field, x));
+  // Albums the player has not met yet are padded with the artist's discography (an imported history knows no album).
+  const discography = field === 'album' ? shuffle((t.discography || []).map((a) => Scoring.clean(a))) : [];
   const pool = field === 'artist'
     ? shuffle(others).map((x) => x.artists[0])
-    : [...shuffle(game.library.filter(byArtist)), ...shuffle(others)].map((x) => answerText(field, x));
+    : [...sameArtist, ...discography, ...shuffle(others).map((x) => answerText(field, x))];
   const seen = new Set([Scoring.norm(right)]);
   const wrong = [];
   for (const c of pool) {
@@ -399,7 +402,8 @@ function renderChoices(t) {
   t.options ??= {};
   for (const field of TEXT_FIELDS) {
     if (!game.fields.includes(field)) continue;
-    t.options[field] ??= buildOptions(field, t);
+    // Rebuilt while incomplete: the album and the discography arrive once Deezer has answered.
+    if (!(t.options[field]?.length >= 4)) t.options[field] = buildOptions(field, t);
     const box = document.querySelector(`.choices[data-for="${field}"]`);
     const chosen = $(`#g-${field}`).value;
     box.replaceChildren(...(t.options[field] || []).map((o) => el('button', {
@@ -461,7 +465,7 @@ function selectedFields() {
     .map((i) => i.value);
 }
 
-/* ---------- Import de l'historique Spotify ---------- */
+/* ---------- Import de l'historique (Spotify ou YouTube Music) ---------- */
 
 function loadScript(src) {
   return new Promise((ok, fail) => document.head.append(el('script', { src, onload: ok, onerror: () => fail(new Error('chargement impossible')) })));
@@ -473,11 +477,14 @@ async function importHistory(files) {
   status.textContent = 'Lecture du fichier…';
   try {
     const lists = [];
+    let html = false;
     for (const file of files) {
+      if (/\.html?$/i.test(file.name)) { html = true; continue; }
       if (/\.zip$/i.test(file.name)) {
         if (!window.JSZip) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
         const zip = await JSZip.loadAsync(file);
         const entries = Object.values(zip.files).filter((f) => !f.dir && History.FILE_RE.test(f.name));
+        html ||= Object.values(zip.files).some((f) => /youtube[^/]*\/.*\.html$/i.test(f.name));
         for (const [i, entry] of entries.entries()) {
           status.textContent = `Lecture de ton historique… ${i + 1} / ${entries.length}`;
           lists.push(JSON.parse(await entry.async('string')));
@@ -487,11 +494,12 @@ async function importHistory(files) {
       }
     }
     const h = History.aggregate(lists);
-    if (!h.streams) throw new Error("aucune écoute de musique trouvée. Vérifie que c'est bien le fichier envoyé par Spotify");
+    if (!h.streams && html) throw new Error("l'export YouTube est au format HTML. Refais-le dans Google Takeout en choisissant le format JSON pour l'historique");
+    if (!h.streams) throw new Error("aucune écoute de musique trouvée. Vérifie que c'est bien le fichier envoyé par Spotify ou par Google Takeout");
     store.set('history', h);
     if (!store.get('history')) throw new Error('ton navigateur refuse de garder les données');
     store.set('source', 'history');
-    Stats.track('historique-importe', { format: h.tracks.some((t) => t.u) ? 'etendu' : 'annee' });
+    Stats.track('historique-importe', { format: h.src === 'spotify' ? (h.tracks.some((t) => t.u) ? 'etendu' : 'annee') : h.src });
     enterSetup();
   } catch (e) {
     status.textContent = `Import impossible : ${e.message}.`;
@@ -745,6 +753,12 @@ async function replay() {
     if (!found) { skip(); return; }
     // The album of a history track is only known once Deezer has found it.
     if (choiceMode() && $('#result').classList.contains('hidden')) renderChoices(t);
+    if (choiceMode() && game.fields.includes('album') && !t.discography) {
+      Deezer.albums(t).then((list) => {
+        t.discography = list;
+        if (currentTrack() === t && $('#result').classList.contains('hidden')) renderChoices(t);
+      });
+    }
     Deezer.resolve(game.tracks[game.index + 1]);
   }
   const snippet = () => ($('#result').classList.contains('hidden') ? game.snippetMs : 0);

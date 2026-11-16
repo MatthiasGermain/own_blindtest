@@ -13,7 +13,7 @@ Pas d'appli à installer, ça marche sur téléphone comme sur ordinateur.
 | Source | Ce qu'il faut | Ce qu'on joue |
 | --- | --- | --- |
 | **Deezer** | Le lien de ton profil public, sans mot de passe | Ton top 100, tes coups de cœur, tes playlists |
-| **Fichier** | L'historique que Spotify t'envoie sur demande (ZIP) | Tes titres les plus écoutés, depuis ton premier jour |
+| **Fichier** | L'historique que Spotify ou YouTube Music (Google Takeout, format JSON) t'envoient sur demande (ZIP) | Tes titres les plus écoutés, depuis ton premier jour |
 | **Spotify** | Un compte Premium ajouté comme testeur | Tes titres likés, tes tops, tes playlists |
 
 Avec Deezer et le fichier, le son vient des extraits Deezer de 30 secondes. Avec la connexion Spotify, il passe par le lecteur Spotify (Premium, Chrome ou Edge sur ordinateur). Spotify limite cette connexion à 5 testeurs.
@@ -39,7 +39,7 @@ Site statique en JavaScript, sans dépendance ni étape de build.
 index.html     écrans, styles (DA « Disco grain »)
 app.js         déroulé du jeu, sources Spotify, accueil
 deezer.js      API publique Deezer (JSONP), profils, lecteur d'extraits
-history.js     lecture de l'export Spotify (ZIP ou JSON)
+history.js     lecture des exports Spotify et YouTube Music (ZIP ou JSON)
 scoring.js     barème (textes tolérants, années, artistes multiples)
 challenge.js   liens de défi (JSON compressé dans l'URL)
 stats.js       mesure d'audience sans cookies (Umami ou GoatCounter)

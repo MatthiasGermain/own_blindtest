@@ -244,7 +244,7 @@
         <button class="tile" type="button" data-open="file" style="--i: 1">
           <span class="tile-tag">Le plus personnel</span>
           <span class="tile-name">Fichier</span>
-          <span class="tile-desc">Ton historique Spotify complet, depuis ton premier jour.</span>
+          <span class="tile-desc">Ton historique Spotify ou YouTube Music, depuis ton premier jour.</span>
         </button>
         <button class="tile" type="button" data-open="spotify" style="--i: 2">
           <span class="tile-tag">Testeurs seulement</span>
@@ -277,13 +277,23 @@
 
     <div class="card panel hidden" data-panel="file">
       <button class="back" type="button">← Retour</button>
-      <h2>Ton historique Spotify</h2>
-      <p>Dépose les données d'écoute que Spotify t'envoie sur demande : chaque titre et l'année où tu l'as découvert. Tout est analysé sur ton appareil.</p>
-      <label for="history-file">Fichier de données Spotify (.zip ou .json)</label>
-      <input id="history-file" type="file" accept=".zip,.json,application/zip,application/json" multiple>
+      <h2>Ton historique d'écoute</h2>
+      <p>Dépose les données d'écoute que Spotify ou YouTube Music t'envoient sur demande : chaque titre et l'année où tu l'as découvert. Tout est analysé sur ton appareil.</p>
+      <label for="history-file">Fichier de données (.zip ou .json)</label>
+      <input id="history-file" type="file" accept=".zip,.json,.html,application/zip,application/json" multiple>
       <p id="history-status" class="status"></p>
       <details class="howto">
-        <summary>Comment obtenir ce fichier ?</summary>
+        <summary>Avec YouTube Music (quelques heures)</summary>
+        <ol>
+          <li>Ouvre <em>takeout.google.com</em> et clique sur <em>Tout désélectionner</em>.</li>
+          <li>Coche seulement <strong>YouTube et YouTube Music</strong>.</li>
+          <li>Dans <em>Formats multiples</em>, choisis <strong>JSON</strong> pour l'historique. Dans <em>Toutes les données YouTube incluses</em>, garde seulement <em>historique</em>.</li>
+          <li>Crée l'export. Google envoie un lien par e-mail, souvent en quelques minutes.</li>
+          <li>Dépose ici le ZIP reçu, sans le décompresser.</li>
+        </ol>
+      </details>
+      <details class="howto">
+        <summary>Avec Spotify (quelques jours)</summary>
         <ol>
           <li>Sur spotify.com, ouvre <em>Compte</em> → <em>Confidentialité</em>.</li>
           <li>Coche <strong>Historique de streaming étendu</strong>, puis demande les données.</li>
@@ -467,12 +477,12 @@
   </section>
 </main>
 <!-- Change ?v= on each release: a fresh page then never runs scripts kept in the browser cache. -->
-<script src="config.js?v=5"></script>
-<script src="stats.js?v=5"></script>
-<script src="scoring.js?v=5"></script>
-<script src="challenge.js?v=5"></script>
-<script src="history.js?v=5"></script>
-<script src="deezer.js?v=5"></script>
-<script src="app.js?v=5"></script>
+<script src="config.js?v=6"></script>
+<script src="stats.js?v=6"></script>
+<script src="scoring.js?v=6"></script>
+<script src="challenge.js?v=6"></script>
+<script src="history.js?v=6"></script>
+<script src="deezer.js?v=6"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>

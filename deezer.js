@@ -34,6 +34,7 @@ const Deezer = (() => {
         track.preview = d.preview;
         track.cover ||= d.album?.cover_xl || d.album?.cover_big || '';
         track.album ||= d.album?.title || '';
+        track.artistId ??= d.artist?.id;
       }
       // Profile tracks come without a release date: it lives on the album.
       if (track.releaseYear === undefined && track.albumId) {
@@ -43,6 +44,19 @@ const Deezer = (() => {
       return true;
     })().catch(() => { track.resolving = null; return false; });
     return track.resolving;
+  }
+
+  // The artist's discography, albums first: the hardest wrong answers for "which album?".
+  const discographies = new Map();
+  function albums(track) {
+    const id = track?.artistId;
+    if (!id) return Promise.resolve([]);
+    if (!discographies.has(id)) {
+      discographies.set(id, jsonp(`https://api.deezer.com/artist/${id}/albums?limit=50`)
+        .then((res) => (res?.data || []).sort((a, b) => (b.record_type === 'album') - (a.record_type === 'album')).map((a) => a.title).filter(Boolean))
+        .catch(() => { discographies.delete(id); return []; }));
+    }
+    return discographies.get(id);
   }
 
   // Preview links are signed and expire: fetch a fresh one when a stored link stops loading.
@@ -86,6 +100,7 @@ const Deezer = (() => {
     uri: `dz:${d.id}`,
     name: d.title_short || d.title,
     artists: [d.artist?.name || '?'],
+    artistId: d.artist?.id,
     album: d.album?.title || '',
     albumId: d.album?.id || null,
     cover: d.album?.cover_xl || d.album?.cover_big || '',
@@ -140,5 +155,5 @@ const Deezer = (() => {
     setVolume(v) { audio.volume = v; },
   };
 
-  return { resolve, refresh, player, profile };
+  return { resolve, refresh, albums, player, profile };
 })();
