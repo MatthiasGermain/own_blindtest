@@ -681,7 +681,8 @@ let game = null;
 function updateStartButton() {
   const needsSpotify = !onDeezer($('#opt-source').value);
   $('#btn-start').disabled = !(tracks.length && (deviceId || !needsSpotify) && selectedFields().length);
-  $('#btn-challenge').disabled = !deviceId;
+  // A challenge plays Deezer previews when Spotify can't: it only waits for a Spotify player still starting.
+  $('#btn-challenge').disabled = !!store.get('token') && !deviceId && !$('#player-status').classList.contains('error');
 }
 
 function shuffle(arr) {
@@ -729,19 +730,27 @@ function startGame() {
   });
 }
 
+const CHALLENGE_ADDED = {
+  liked: (o) => [`Année où ${o} l'a liké`, 'Liké en'],
+  dzliked: (o) => [`Année où ${o} l'a mis en coup de cœur`, 'Coup de cœur en'],
+};
+
 function startChallenge() {
   const c = pendingChallenge;
   dropChallenge();
-  const addedNames = c.kind === 'liked'
-    ? [`Année où ${c.owner} l'a liké`, 'Liké en']
-    : ["Année d'ajout à la playlist", 'Ajouté en'];
+  const addedNames = CHALLENGE_ADDED[c.kind]?.(c.owner) || ["Année d'ajout à la playlist", 'Ajouté en'];
+  // Full Spotify tracks only for a Spotify challenge on a ready Spotify player; Deezer previews otherwise.
+  const deezer = !deviceId || c.tracks.some((t) => t.uri.startsWith('dz:'));
+  // A preview lasts 30 s: a start picked in a full Spotify track is brought back inside it.
+  const room = Math.max(0, 30000 - (c.snippetMs || 30000));
   beginGame({
     mode: c.mode,
     kind: c.kind,
+    engine: deezer ? 'deezer' : 'spotify',
     fields: c.fields,
     answers: c.answers,
     addedNames,
-    tracks: c.tracks.map((t) => ({ ...t })),
+    tracks: c.tracks.map((t) => ({ ...t, startMs: deezer ? Math.min(t.startMs, room) : t.startMs })),
     snippetMs: c.snippetMs,
     fixedStarts: true,
     challenge: c,
@@ -897,6 +906,20 @@ function next() {
   game.index < game.tracks.length ? startRound() : endGame();
 }
 
+// Back to the settings mid-game: the sound stops, nothing is scored.
+function quitGame() {
+  if (!confirm('Abandonner la partie en cours ?')) return;
+  clearTimeout(snippetTimer);
+  clearTimeout(stallTimer);
+  pending = null;
+  $('#round-loading').classList.add('hidden');
+  activePlayer()?.pause();
+  backToSetup();
+}
+
+// The settings, or home for a visitor who only came to play a challenge (no source yet).
+const backToSetup = () => (store.get('token') || store.get('history') || store.get('deezerUser') ? show('screen-setup') : goHome());
+
 function endGame() {
   clearTimeout(snippetTimer);
   clearTimeout(stallTimer);
@@ -940,6 +963,8 @@ function endGame() {
 let pendingChallenge = null;
 
 async function myName() {
+  // A Deezer game is signed with the profile (or room) name: no Spotify call.
+  if (game.engine === 'deezer' || !store.get('token')) return store.get('deezerUser')?.name || store.get('pseudo') || 'Un pote';
   const cached = store.get('myName');
   if (cached) return cached;
   let name = 'Un pote';
@@ -950,8 +975,11 @@ async function myName() {
 
 function sourceLabel(name) {
   if (game.challenge) return game.challenge.source;
-  if (game.kind === 'playlist') return `Playlist « ${game.detail} »`;
+  if (game.kind === 'playlist' || game.kind === 'dzplaylist') return `Playlist « ${game.detail} »`;
   if (game.kind === 'top') return `${game.detail} de ${name}`;
+  if (game.kind === 'dztop') return `Top Deezer de ${name}`;
+  if (game.kind === 'dzliked') return `Coups de cœur de ${name}`;
+  if (game.kind === 'history') return `Historique de ${name}`;
   return `Likés de ${name}`;
 }
 
@@ -963,21 +991,6 @@ async function prepareShare(score, max, grid) {
   btn.disabled = true;
   $('#share-link').value = '';
   $('#share-feedback').textContent = '';
-  $('#share-link').classList.toggle('hidden', game.engine === 'deezer');
-  // Deezer games can't be replayed by someone else yet: share the result without a challenge link.
-  if (game.engine === 'deezer') {
-    const source = {
-      history: "Mon historique d'écoute",
-      dztop: 'Mon top Deezer',
-      dzliked: 'Mes coups de cœur Deezer',
-      dzplaylist: `Playlist « ${game.detail} »`,
-    }[game.kind];
-    const head = game.mode === 'sudden' ? `Blindtest${answersTag()} · Mort subite · ${source} · série de ${score}` : `Blindtest${answersTag()} · ${source} · ${score}/${max}`;
-    game.shareText = `${head}\n${Challenge.squares(grid)}`;
-    btn.disabled = false;
-    $('#share-feedback').textContent = 'Les défis sur Deezer arrivent bientôt : pour l\'instant, tu partages ton score.';
-    return;
-  }
   try {
     const name = await myName();
     const sudden = game.mode === 'sudden';
@@ -1010,7 +1023,7 @@ async function prepareShare(score, max, grid) {
 }
 
 async function shareGame() {
-  Stats.track('partage', { ...gameFacts(), lien: game.engine === 'deezer' ? 'non' : 'oui' });
+  Stats.track('partage', { ...gameFacts(), lien: 'oui' });
   const feedback = $('#share-feedback');
   if (navigator.share && matchMedia('(pointer: coarse)').matches) {
     try { await navigator.share({ text: game.shareText }); return; } catch (e) { if (e.name === 'AbortError') return; }
@@ -1031,6 +1044,7 @@ function showChallenge() {
     : `${c.tracks.length} titres · ${c.source} · score à battre : ${c.score} / ${c.max}`;
   const fields = c.fields.map((k) => (k === 'added' ? "année d'ajout" : LABELS[k].toLowerCase())).join(', ');
   $('#login-challenge-title').textContent = `${c.name} te défie !`;
+  $('#login-challenge-desc').textContent = `${what}.`;
   $('#challenge-title').textContent = `${c.name} te défie !`;
   const how = c.answers === 'choice' ? 'réponses à choisir' : 'réponses à taper';
   $('#challenge-desc').textContent = `${what}. À deviner : ${fields}, ${how}.`;
@@ -1139,6 +1153,8 @@ async function main() {
   $('#btn-retry').onclick = () => { store.del('liked'); location.reload(); };
   $('#btn-reload').onclick = () => loadSource(true);
   $('#btn-home').onclick = () => goHome();
+  for (const id of ['#btn-setup-back', '#btn-denied-back', '#btn-end-home']) $(id).onclick = () => goHome();
+  $('#btn-quit').onclick = quitGame;
   // Does the game bring visitors to the portfolio?
   for (const a of document.querySelectorAll('[data-credit]')) a.addEventListener('click', () => Stats.track('lien-auteur', { lien: a.dataset.credit }));
   for (const tile of document.querySelectorAll('[data-open]')) {
@@ -1170,10 +1186,11 @@ async function main() {
   $('#btn-pause').onclick = () => activePlayer().togglePlay();
   $('#btn-skip').onclick = skip;
   $('#btn-next').onclick = next;
-  $('#btn-again').onclick = () => show('screen-setup');
+  $('#btn-again').onclick = backToSetup;
   Deezer.player.setVolume(store.get('volume', 70) / 100);
   $('#btn-share').onclick = shareGame;
   $('#btn-challenge').onclick = startChallenge;
+  $('#btn-challenge-home').onclick = startChallenge;
   $('#btn-challenge-skip').onclick = dropChallenge;
   setupChoiceUi();
   $('#opt-answers').value = store.get('answers', matchMedia('(pointer: coarse)').matches ? 'choice' : 'type');

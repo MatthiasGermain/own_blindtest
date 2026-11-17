@@ -29,8 +29,12 @@ const Deezer = (() => {
     if (!track) return Promise.resolve(false);
     track.resolving ??= (async () => {
       if (!track.preview) {
-        const d = await search(track.artists[0], track.name);
+        // A Deezer track (a challenge link keeps only its id) is fetched as is; any other one is searched.
+        const d = track.uri?.startsWith('dz:')
+          ? await jsonp(`https://api.deezer.com/track/${track.uri.slice(3)}?`).then((r) => (r?.preview ? r : null))
+          : await search(track.artists[0], track.name);
         if (!d) return false;
+        if (track.releaseYear === undefined && d.release_date) track.releaseYear = parseInt(d.release_date, 10) || null;
         track.preview = d.preview;
         track.cover ||= d.album?.cover_xl || d.album?.cover_big || '';
         track.album ||= d.album?.title || '';

@@ -140,10 +140,13 @@
   .panel { animation: slide .45s var(--ease-out) both; }
   @keyframes slide { from { opacity: 0; transform: translateX(28px); } }
   button.back {
-    font: 400 12px var(--font-ui); text-transform: uppercase; letter-spacing: .1em;
-    background: none; color: var(--muted); padding: 0; margin: 0 0 18px; border-radius: 0;
+    font: 500 13px var(--font-ui); text-transform: uppercase; letter-spacing: .1em;
+    background: none; color: var(--accent); padding: 6px 0; margin: 0 0 14px; border-radius: 0;
   }
   button.back:hover:not(:disabled) { transform: none; box-shadow: none; color: var(--text); }
+  .round-quit { text-align: center; margin: 22px 0 0; }
+  button.quit { font: 400 12px var(--font-ui); text-transform: uppercase; letter-spacing: .1em; background: none; color: var(--muted); padding: 8px 0; border-radius: 0; text-decoration: underline; text-underline-offset: 4px; }
+  button.quit:hover:not(:disabled) { transform: none; box-shadow: none; color: var(--text); }
 
   /* ---------- Manche ---------- */
   .topbar { display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); }
@@ -411,7 +414,7 @@
   </header>
 
   <section id="screen-login" class="screen hidden">
-    <div id="login-challenge" class="challenge hidden"><p class="challenge-title display" id="login-challenge-title"></p><p class="status" style="margin:0">Connecte-toi pour relever le défi.</p></div>
+    <div id="login-challenge" class="challenge hidden"><p class="challenge-title display" id="login-challenge-title"></p><p class="status" id="login-challenge-desc" style="margin:0"></p><div class="actions"><button id="btn-challenge-home" type="button">Relever le défi</button></div><p class="status" style="margin:10px 0 0">Pas besoin de compte : les extraits viennent de Deezer.</p></div>
 
     <div id="home-pick">
       <h2 class="home-title">D'où vient ta musique ?</h2>
@@ -650,6 +653,7 @@
   </section>
 
   <section id="screen-setup" class="card screen hidden">
+    <button id="btn-setup-back" class="back" type="button">← Accueil</button>
     <div id="challenge-box" class="challenge hidden">
       <p class="challenge-title display" id="challenge-title"></p>
       <p class="status" id="challenge-desc" style="margin:0"></p>
@@ -733,6 +737,7 @@
   </section>
 
   <section id="screen-denied" class="card screen hidden">
+    <button id="btn-denied-back" class="back" type="button">← Accueil</button>
     <h2>Compte non autorisé</h2>
     <p>Ton compte Spotify n'est pas dans la liste des <strong>testeurs</strong> de cette app. Spotify bloque donc l'accès à ta bibliothèque.</p>
     <ol>
@@ -796,9 +801,11 @@
       </div>
     </div>
     </div>
+    <p class="round-quit"><button id="btn-quit" class="quit" type="button">Quitter la partie</button></p>
   </section>
 
   <section id="screen-end" class="card screen hidden">
+    <button id="btn-end-home" class="back" type="button">← Accueil</button>
     <div class="end-body">
     <div class="end-main">
     <h2 id="end-title">Fini !</h2>
@@ -827,13 +834,13 @@
   </footer>
 </main>
 <!-- Change ?v= on each release: a fresh page then never runs scripts kept in the browser cache. -->
-<script src="config.js?v=19"></script>
-<script src="stats.js?v=19"></script>
-<script src="scoring.js?v=19"></script>
-<script src="challenge.js?v=19"></script>
-<script src="history.js?v=19"></script>
-<script src="deezer.js?v=19"></script>
-<script src="room.js?v=19"></script>
-<script src="app.js?v=19"></script>
+<script src="config.js?v=21"></script>
+<script src="stats.js?v=21"></script>
+<script src="scoring.js?v=21"></script>
+<script src="challenge.js?v=21"></script>
+<script src="history.js?v=21"></script>
+<script src="deezer.js?v=21"></script>
+<script src="room.js?v=21"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>
