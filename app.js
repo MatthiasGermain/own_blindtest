@@ -688,6 +688,8 @@ function updateStartButton() {
   $('#btn-start').disabled = !(tracks.length && (deviceId || !needsSpotify) && selectedFields().length);
   // A challenge plays Deezer previews when Spotify can't: it only waits for a Spotify player still starting.
   $('#btn-challenge').disabled = !!store.get('token') && !deviceId && !$('#player-status').classList.contains('error');
+  // « Pochette surprise » needs only the songs: no player.
+  $('#btn-covers').disabled = !tracks.length;
 }
 
 function shuffle(arr) {
@@ -1199,6 +1201,7 @@ async function main() {
   $('#btn-challenge-home').onclick = startChallenge;
   $('#btn-challenge-skip').onclick = dropChallenge;
   setupChoiceUi();
+  Covers.wire();
   $('#opt-answers').value = store.get('answers', matchMedia('(pointer: coarse)').matches ? 'choice' : 'type');
   if (!$('#opt-answers').value) $('#opt-answers').value = 'type';
   $('#opt-answers').onchange = () => store.set('answers', $('#opt-answers').value);

@@ -183,5 +183,26 @@ const Deezer = (() => {
     setVolume(v) { audio.volume = v; },
   };
 
-  return { resolve, refresh, albums, player, profile };
+  /* ---------- Albums, for « Pochette surprise » ---------- */
+
+  const albumCatalog = {
+    // Albums by name, for the answer suggestions. No cover: it would give the answer away.
+    async search(q, limit = 8) {
+      const res = await call(`/search/album?q=${encodeURIComponent(q)}&limit=${limit}`);
+      return (res.data || []).map((a) => ({ id: String(a.id), title: a.title, artist: a.artist?.name || '' }));
+    },
+    // The Deezer album that matches a name found elsewhere (Spotify, a listening history).
+    async find(artist, title) {
+      const wanted = Scoring.norm(artist);
+      for (const q of [`artist:"${strip(artist)}" album:"${strip(title)}"`, `${strip(artist)} ${strip(title)}`]) {
+        const res = await call(`/search/album?q=${encodeURIComponent(q)}&limit=5`);
+        const hit = (res.data || []).find((a) => Scoring.similarity(Scoring.norm(a.artist?.name || ''), wanted) >= 0.6);
+        if (hit) return String(hit.id);
+      }
+      return null;
+    },
+    get: (id) => call(`/album/${id}`),
+  };
+
+  return { resolve, refresh, albums, player, profile, album: albumCatalog };
 })();

@@ -342,7 +342,32 @@
   .award .status { margin: 2px 0 0; }
 
   /* ---------- Grand écran : on garde le rythme du téléphone, en deux colonnes ---------- */
+  /* Pochette surprise */
+  .alt-game { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 18px; }
+  .alt-title { font-size: 22px; margin: 0; }
+  .alt-game .status { margin-top: 4px; }
+  .alt-game .actions { margin-top: 12px; }
+  #cv-canvas { display: block; width: 100%; max-width: min(520px, 72vw); aspect-ratio: 1; height: auto; margin: 0 auto 16px; border: 1px solid var(--line-strong); image-rendering: pixelated; }
+  .cv-side { margin: 0; }
+  .cv-suggest { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 4px; }
+  .cv-suggest button { width: 100%; text-align: left; display: grid; gap: 2px; padding: 9px 12px; background: transparent; color: var(--text); border: 1px solid var(--line); border-radius: 0; font: 400 14px var(--font-ui); box-shadow: none; }
+  .cv-suggest button:hover, .cv-suggest button:focus-visible { border-color: var(--text); box-shadow: 3px 3px 0 0 var(--accent); }
+  .cv-suggest .status { margin: 0; font-size: 11px; }
+  .cv-hints, .cv-tries { list-style: none; padding: 0; margin: 14px 0 0; }
+  .cv-hints li { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--line); animation: rise .4s var(--ease-out) both; }
+  .cv-hints .status { margin: 0; text-transform: uppercase; letter-spacing: .1em; font-size: 11px; }
+  .cv-hints strong { text-align: right; letter-spacing: .04em; }
+  .cv-tries li { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; font-size: 14px; animation: rise .4s var(--ease-out) both; }
+  .cv-tries li.skip, .cv-tries li.wrong { color: var(--muted); }
+  .cv-title { font-size: clamp(26px, 7vw, 40px); line-height: 1.05; margin: 0 0 4px; }
+  .cv-verdict { font: 900 24px var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; color: var(--accent); margin: 8px 0 0; }
+  .cv-grid { white-space: pre-line; }
+  #cv-end .big { font-size: clamp(64px, 16vw, 96px); letter-spacing: -0.03em; }
+
   @media (min-width: 1024px) {
+    .cv-body { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+    .cv-media { position: sticky; top: 24px; }
+    .cv-side { padding: 28px; }
     main { max-width: 1160px; padding: 56px 40px 72px; }
     header { display: flex; align-items: baseline; gap: 28px; margin-bottom: 40px; }
     h1 { font-size: 72px; }
@@ -752,6 +777,67 @@
       <button id="btn-logout" class="ghost">Déconnexion</button>
       <button id="btn-forget-dz" class="ghost">Oublier le profil Deezer</button>
     </div>
+    <div class="alt-game">
+      <p class="alt-title display">Pochette surprise</p>
+      <p class="status">Retrouve tes albums à partir de leur pochette pixelisée : 5 pochettes, 6 essais chacune, un indice à chaque erreur.</p>
+      <div class="actions"><button id="btn-covers" class="ghost" type="button" disabled>Jouer aux pochettes</button></div>
+      <p class="status" id="covers-status" role="status"></p>
+    </div>
+  </section>
+
+  <section id="screen-cover" class="screen hidden">
+    <div id="cv-game">
+      <div class="topbar">
+        <span>Pochette <strong id="cv-num"></strong></span>
+        <span>Score <strong id="cv-score">0</strong></span>
+      </div>
+      <div class="progress"><i id="cv-bar"></i></div>
+      <div class="cv-body">
+        <div class="cv-media">
+          <canvas id="cv-canvas" width="600" height="600" role="img" aria-label="Pochette à deviner"></canvas>
+        </div>
+        <div class="card cv-side">
+          <div id="cv-play">
+            <form id="cv-form" autocomplete="off">
+              <label for="cv-guess" style="margin-top:0">Quel album ?</label>
+              <input id="cv-guess" placeholder="Titre de l’album ou artiste" autocapitalize="off" spellcheck="false">
+              <ul class="cv-suggest" id="cv-suggest"></ul>
+            </form>
+            <div class="controls">
+              <button id="cv-skip" class="ghost" type="button">Passer</button>
+              <button id="cv-listen" class="ghost hidden" type="button">Écouter 5 s</button>
+            </div>
+            <p class="status" id="cv-left"></p>
+          </div>
+          <div id="cv-result" class="hidden">
+            <p class="cv-title display" id="cv-title"></p>
+            <p class="status" id="cv-artist" style="margin:0"></p>
+            <p class="cv-verdict" id="cv-verdict"></p>
+            <div class="actions"><button id="cv-next" type="button">Pochette suivante</button></div>
+          </div>
+          <p class="status" id="cv-sound" role="status"></p>
+          <ul class="cv-hints" id="cv-hints"></ul>
+          <ol class="cv-tries" id="cv-tries"></ol>
+        </div>
+      </div>
+      <p class="round-quit"><button id="cv-quit" class="quit" type="button">Quitter la partie</button></p>
+    </div>
+    <div id="cv-end" class="card hidden">
+      <button id="cv-end-back" class="back" type="button">← Retour</button>
+      <div class="end-body">
+        <div class="end-main">
+          <h2>Pochette surprise</h2>
+          <p class="big" id="cv-end-score"></p>
+          <p class="squares cv-grid" id="cv-end-grid"></p>
+          <div class="actions">
+            <button id="cv-share" type="button">Partager</button>
+            <button id="cv-again" class="ghost" type="button">Rejouer</button>
+          </div>
+          <p class="status" id="cv-share-feedback"></p>
+        </div>
+        <ul class="recap" id="cv-end-recap"></ul>
+      </div>
+    </div>
   </section>
 
   <section id="screen-denied" class="card screen hidden">
@@ -852,13 +938,14 @@
   </footer>
 </main>
 <!-- Change ?v= on each release: a fresh page then never runs scripts kept in the browser cache. -->
-<script src="config.js?v=25"></script>
-<script src="stats.js?v=25"></script>
-<script src="scoring.js?v=25"></script>
-<script src="challenge.js?v=25"></script>
-<script src="history.js?v=25"></script>
-<script src="deezer.js?v=25"></script>
-<script src="room.js?v=25"></script>
-<script src="app.js?v=25"></script>
+<script src="config.js?v=26"></script>
+<script src="stats.js?v=26"></script>
+<script src="scoring.js?v=26"></script>
+<script src="challenge.js?v=26"></script>
+<script src="history.js?v=26"></script>
+<script src="deezer.js?v=26"></script>
+<script src="room.js?v=26"></script>
+<script src="cover.js?v=26"></script>
+<script src="app.js?v=26"></script>
 </body>
 </html>
