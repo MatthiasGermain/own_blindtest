@@ -389,9 +389,12 @@
 
   /* ---------- Grand écran : on garde le rythme du téléphone, en deux colonnes ---------- */
   /* Pochette surprise */
-  .alt-title { font-size: 26px; margin: 18px 0 0; }
   #screen-setup[data-game="covers"] .bt-only, #screen-setup[data-game="blindtest"] .cv-only { display: none !important; }
-  .game-switch { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line-strong); }
+  /* Two sections: the music, shared by both games, then the game and its own options right below its switch. */
+  .setup-game { border-top: 1px solid var(--line); margin-top: 22px; }
+  .music-info .status:empty { display: none; }
+  .game-desc { margin-top: 14px; max-width: 520px; }
+  .game-switch { display: grid; grid-template-columns: 1fr 1fr; max-width: 460px; border: 1px solid var(--line-strong); }
   .game-switch label {
     position: relative; margin: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px 8px; cursor: pointer;
     font: 800 18px/1.1 var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; text-transform: none; letter-spacing: 0; color: var(--text);
@@ -475,9 +478,11 @@
     #login-challenge { max-width: 720px; }
 
     #screen-setup { padding: 36px 40px; }
-    .setup-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 56px; }
-    .setup-col > label.first { margin-top: 0; }
-    .setup-col + .setup-col { border-left: 1px solid var(--line); padding-left: 56px; }
+    /* One grid for both sections: the music details line up with the options below them. */
+    .setup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 56px; align-items: start; }
+    .setup-grid > .span { grid-column: 1 / -1; }
+    .music-info > :first-child { margin-top: 2px; }
+    .setup-game { margin-top: 28px; padding-top: 6px; }
     #screen-setup .setup-go { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--line); }
     #btn-start { font-size: 20px; padding: 14px 32px; }
 
@@ -791,85 +796,95 @@
     </div>
     <div class="challenge cv-dare hidden"><p class="challenge-title display"></p><p class="status" style="margin:0"></p><div class="actions"><button class="cv-dare-go" type="button">Relever le défi</button><button class="cv-dare-skip ghost" type="button">Ignorer</button></div><p class="status cv-dare-status" role="status"></p></div>
     <h2>Préparer la partie</h2>
-    <div class="game-switch" role="radiogroup" aria-label="Jeu">
-      <label><input type="radio" name="game" value="blindtest" checked> Blindtest</label>
-      <label><input type="radio" name="game" value="covers"> Pochette surprise</label>
-    </div>
-    <div class="setup-cols">
-    <div class="setup-col">
-    <label for="opt-source">Ta musique</label>
-    <select id="opt-source">
-      <option value="history">Mon historique d'écoute</option>
-      <option value="dztop">Deezer : mon top</option>
-      <option value="dzliked">Deezer : mes coups de cœur</option>
-      <option value="dzplaylist">Deezer : une playlist</option>
-      <option value="liked">Spotify : titres likés</option>
-      <option value="top:short_term">Spotify : top 4 semaines</option>
-      <option value="top:medium_term">Spotify : top 6 mois</option>
-      <option value="top:long_term">Spotify : top de toujours</option>
-      <option value="playlist">Spotify : une playlist</option>
-    </select>
-    <div id="playlist-pick" class="hidden">
-      <label for="opt-playlist">Playlist</label>
-      <select id="opt-playlist"></select>
-    </div>
-    <p id="source-status" class="status">Chargement…</p>
-    <p id="player-status" class="status bt-only">Initialisation du lecteur…</p>
-    <p class="source-links">
-      <button id="btn-home" class="link" type="button">Changer de source</button>
-      <button id="btn-reload" class="link" type="button">Recharger</button>
-      <button id="btn-forget-dz" class="link" type="button">Oublier le profil Deezer</button>
-      <button id="btn-logout" class="link" type="button">Déconnexion Spotify</button>
-    </p>
-    <div class="bt-only">
-    <label for="opt-mode">Mode</label>
-    <select id="opt-mode">
-      <option value="classic">Classique</option>
-      <option value="sudden">Mort subite</option>
-    </select>
-    <p id="mode-hint" class="status hidden">Tu continues tant que tu trouves l'artiste ou le titre. Une erreur et c'est fini.</p>
-    <label for="opt-answers">Réponses</label>
-    <select id="opt-answers">
-      <option value="choice">À choisir : 4 propositions</option>
-      <option value="type">À taper</option>
-    </select>
-    </div>
-    </div>
-    <div class="setup-col bt-only">
-    <label class="first">Champs à deviner</label>
-    <div id="opt-fields" class="fields">
-      <label data-sources="history liked top playlist dztop dzliked dzplaylist"><input type="checkbox" value="artist"> Artiste</label>
-      <label data-sources="history liked top playlist dztop dzliked dzplaylist"><input type="checkbox" value="title"> Titre</label>
-      <label data-sources="history liked top playlist dztop dzliked dzplaylist"><input type="checkbox" value="album"> Album</label>
-      <label data-sources="liked top playlist dztop dzliked dzplaylist"><input type="checkbox" value="year"> Année de sortie</label>
-      <label data-sources="liked playlist dzliked dzplaylist"><input type="checkbox" value="added"> <span id="field-added-name">Année d'ajout</span></label>
-      <label data-sources="history"><input type="checkbox" value="discovered"> Année de découverte</label>
-    </div>
-    <div class="row">
-      <div id="count-wrap">
-        <label for="opt-count">Nombre de titres</label>
-        <input id="opt-count" type="number" min="1" value="10">
-      </div>
-      <div>
-        <label for="opt-snippet">Durée d'écoute</label>
-        <select id="opt-snippet">
-          <option value="10">10 s</option>
-          <option value="20" selected>20 s</option>
-          <option value="30">30 s</option>
-          <option value="0">Tout le morceau</option>
-        </select>
+    <div class="setup-music">
+      <label for="opt-source">Ta musique</label>
+      <div class="setup-grid">
+        <div>
+          <select id="opt-source">
+            <option value="history">Mon historique d'écoute</option>
+            <option value="dztop">Deezer : mon top</option>
+            <option value="dzliked">Deezer : mes coups de cœur</option>
+            <option value="dzplaylist">Deezer : une playlist</option>
+            <option value="liked">Spotify : titres likés</option>
+            <option value="top:short_term">Spotify : top 4 semaines</option>
+            <option value="top:medium_term">Spotify : top 6 mois</option>
+            <option value="top:long_term">Spotify : top de toujours</option>
+            <option value="playlist">Spotify : une playlist</option>
+          </select>
+          <div id="playlist-pick" class="hidden">
+            <label for="opt-playlist">Playlist</label>
+            <select id="opt-playlist"></select>
+          </div>
+        </div>
+        <div class="music-info">
+          <p id="source-status" class="status">Chargement…</p>
+          <p id="player-status" class="status bt-only">Initialisation du lecteur…</p>
+          <p class="source-links">
+            <button id="btn-home" class="link" type="button">Changer de source</button>
+            <button id="btn-reload" class="link" type="button">Recharger</button>
+            <button id="btn-forget-dz" class="link" type="button">Oublier le profil Deezer</button>
+            <button id="btn-logout" class="link" type="button">Déconnexion Spotify</button>
+          </p>
+        </div>
       </div>
     </div>
-    <label for="opt-start">Début de l'extrait</label>
-    <select id="opt-start">
-      <option value="random" selected>Au hasard dans le morceau</option>
-      <option value="begin">Début du morceau</option>
-    </select>
-    </div>
-    <div class="setup-col cv-only">
-      <p class="alt-title display">Pochette surprise</p>
-      <p class="status">Retrouve tes albums à partir de leur pochette pixelisée : 5 pochettes, 6 essais chacune, un indice à chaque erreur. Pas besoin de son.</p>
-    </div>
+    <div class="setup-game">
+      <label id="game-label">Le jeu</label>
+      <div class="game-switch" role="radiogroup" aria-labelledby="game-label">
+        <label><input type="radio" name="game" value="blindtest" checked> Blindtest</label>
+        <label><input type="radio" name="game" value="covers"> Pochette surprise</label>
+      </div>
+      <p class="status cv-only game-desc">Retrouve tes albums à partir de leur pochette pixelisée : 5 pochettes, 6 essais chacune, un indice à chaque erreur. Pas besoin de son.</p>
+      <div class="setup-grid bt-only">
+        <div>
+          <label for="opt-mode">Mode</label>
+          <select id="opt-mode">
+            <option value="classic">Classique</option>
+            <option value="sudden">Mort subite</option>
+          </select>
+          <p id="mode-hint" class="status hidden">Tu continues tant que tu trouves l'artiste ou le titre. Une erreur et c'est fini.</p>
+        </div>
+        <div>
+          <label for="opt-answers">Réponses</label>
+          <select id="opt-answers">
+            <option value="choice">À choisir : 4 propositions</option>
+            <option value="type">À taper</option>
+          </select>
+        </div>
+        <div class="span">
+          <label>Champs à deviner</label>
+          <div id="opt-fields" class="fields">
+            <label data-sources="history liked top playlist dztop dzliked dzplaylist"><input type="checkbox" value="artist"> Artiste</label>
+            <label data-sources="history liked top playlist dztop dzliked dzplaylist"><input type="checkbox" value="title"> Titre</label>
+            <label data-sources="history liked top playlist dztop dzliked dzplaylist"><input type="checkbox" value="album"> Album</label>
+            <label data-sources="liked top playlist dztop dzliked dzplaylist"><input type="checkbox" value="year"> Année de sortie</label>
+            <label data-sources="liked playlist dzliked dzplaylist"><input type="checkbox" value="added"> <span id="field-added-name">Année d'ajout</span></label>
+            <label data-sources="history"><input type="checkbox" value="discovered"> Année de découverte</label>
+          </div>
+        </div>
+        <div class="row">
+          <div id="count-wrap">
+            <label for="opt-count">Nombre de titres</label>
+            <input id="opt-count" type="number" min="1" value="10">
+          </div>
+          <div>
+            <label for="opt-snippet">Durée d'écoute</label>
+            <select id="opt-snippet">
+              <option value="10">10 s</option>
+              <option value="20" selected>20 s</option>
+              <option value="30">30 s</option>
+              <option value="0">Tout le morceau</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label for="opt-start">Début de l'extrait</label>
+          <select id="opt-start">
+            <option value="random" selected>Au hasard dans le morceau</option>
+            <option value="begin">Début du morceau</option>
+          </select>
+        </div>
+      </div>
     </div>
     <div class="actions setup-go">
       <button id="btn-start" class="bt-only" type="button" disabled>Lancer le blindtest</button>
@@ -1045,16 +1060,16 @@
   </footer>
 </main>
 <!-- Change ?v= on each release: a fresh page then never runs scripts kept in the browser cache. -->
-<script src="config.js?v=38"></script>
-<script src="util.js?v=38"></script>
-<script src="stats.js?v=38"></script>
-<script src="scoring.js?v=38"></script>
-<script src="challenge.js?v=38"></script>
-<script src="history.js?v=38"></script>
-<script src="deezer.js?v=38"></script>
-<script src="spotify.js?v=38"></script>
-<script src="room.js?v=38"></script>
-<script src="cover.js?v=38"></script>
-<script src="app.js?v=38"></script>
+<script src="config.js?v=39"></script>
+<script src="util.js?v=39"></script>
+<script src="stats.js?v=39"></script>
+<script src="scoring.js?v=39"></script>
+<script src="challenge.js?v=39"></script>
+<script src="history.js?v=39"></script>
+<script src="deezer.js?v=39"></script>
+<script src="spotify.js?v=39"></script>
+<script src="room.js?v=39"></script>
+<script src="cover.js?v=39"></script>
+<script src="app.js?v=39"></script>
 </body>
 </html>
