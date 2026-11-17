@@ -317,10 +317,9 @@ const Salle = (() => {
     say('Lecture de tes playlists Spotify…');
     try {
       // Spotify only opens the playlists the player made or collaborates on.
-      let meId = null;
-      try { meId = (await api('/me')).id; } catch { /* keep every playlist */ }
+      const meId = (await spotifyMe())?.id;
       const lists = [];
-      for (let offset = 0; offset < 200; offset += 50) {
+      for (let offset = 0; offset < 100; offset += 50) {
         const data = await api(`/me/playlists?limit=50&offset=${offset}`);
         lists.push(...data.items.filter((p) => p && (!meId || p.owner?.id === meId || p.collaborative)));
         if (!data.next) break;
@@ -337,11 +336,17 @@ const Salle = (() => {
     }
   }
 
+  // Spotify counts every call: the profile is read once per visit.
+  let me_ = null;
+  async function spotifyMe() {
+    if (!me_) me_ = await api('/me').catch((e) => { if (e.rateLimited) throw e; return null; });
+    return me_;
+  }
+
   // Finds the songs on Deezer, for the preview, until there are enough of them.
   async function spotifyPot(pool, label) {
     const say = (text) => { $('#room-music-status').textContent = text; };
-    let avatar = music?.avatar || '';
-    try { avatar = (await api('/me')).images?.[0]?.url || avatar; } catch { /* no picture */ }
+    const avatar = (await spotifyMe())?.images?.[0]?.url || music?.avatar || '';
     const tracks = [];
     for (const t of pool) {
       if (tracks.length === PER_PLAYER) break;
@@ -357,7 +362,7 @@ const Salle = (() => {
     $('#room-music-status').textContent = `Lecture de « ${p.name} »…`;
     try {
       const list = [];
-      for (let offset = 0; offset < 500; offset += 50) {
+      for (let offset = 0; offset < 200; offset += 50) {
         const data = await api(`/playlists/${encodeURIComponent(p.id)}/items?limit=50&offset=${offset}`);
         for (const it of data.items) { const t = toTrack(it.item ?? it.track, it.added_at); if (t) list.push(t); }
         if (!data.next) break;
@@ -382,11 +387,14 @@ const Salle = (() => {
         if (top.length >= 30) break;
       }
       say('Lecture de tes titres likés…');
-      const liked = [];
-      for (let offset = 0; offset < 500; offset += 50) {
-        const data = await api(`/me/tracks?limit=50&offset=${offset}`);
-        for (const it of data.items) { const t = toTrack(it.track, it.added_at); if (t) liked.push(t); }
-        if (!data.next) break;
+      // The solo game may already have them all; otherwise the 200 most recent are enough.
+      let liked = store.get('liked') || [];
+      if (!liked.length) {
+        for (let offset = 0; offset < 200; offset += 50) {
+          const data = await api(`/me/tracks?limit=50&offset=${offset}`);
+          for (const it of data.items) { const t = toTrack(it.track, it.added_at); if (t) liked.push(t); }
+          if (!data.next) break;
+        }
       }
       const enough = liked.length >= MIN_LIKED;
       await spotifyPot(spreadArtists(enough ? likedFirst(liked, top) : shuffle(top.slice(0, 40))), enough ? 'tes titres likés Spotify' : 'ton top Spotify, faute de titres likés');

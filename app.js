@@ -97,14 +97,31 @@ async function getToken() {
   return store.get('token').access;
 }
 
+// Spotify's "too many requests": a short wait is waited out; a long one is remembered, and no call goes out
+// before it ends (every call during the block can make it last longer).
+function spotifyPause() {
+  const until = store.get('spotifyPause', 0);
+  if (Date.now() >= until) return null;
+  const s = Math.ceil((until - Date.now()) / 1000);
+  const wait = s < 60 ? `${s} s` : s < 3600 ? `${Math.ceil(s / 60)} min` : `${Math.floor(s / 3600)} h ${String(Math.ceil((s % 3600) / 60)).padStart(2, '0')}`;
+  return Object.assign(new Error(`Spotify limite les appels de l'app pour le moment : réessaie dans ${wait}.`), { rateLimited: true });
+}
+
 async function api(path, opts = {}) {
   const isGet = !opts.method || opts.method === 'GET';
   for (let attempt = 0; attempt < 5; attempt++) {
+    const paused = spotifyPause();
+    if (paused) throw paused;
     const res = await fetch(path.startsWith('http') ? path : API + path, {
       ...opts,
       headers: { Authorization: 'Bearer ' + await getToken(), ...(opts.body ? { 'Content-Type': 'application/json' } : {}) },
     });
-    if (res.status === 429) { await sleep((Number(res.headers.get('Retry-After')) || 2) * 1000); continue; }
+    if (res.status === 429) {
+      const wait = Number(res.headers.get('Retry-After')) || 2;
+      if (wait <= 10 && attempt < 2) { await sleep(wait * 1000); continue; }
+      store.set('spotifyPause', Date.now() + Math.max(wait, 30) * 1000);
+      throw spotifyPause();
+    }
     if (res.status >= 500 && isGet && attempt < 3) { await sleep(1000 * 2 ** attempt); continue; }
     const txt = await res.text();
     let data = null;
