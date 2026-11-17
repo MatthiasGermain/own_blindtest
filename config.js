@@ -6,7 +6,7 @@ const SPOTIFY_CLIENT_ID = 'f846e1a28dc54dc7a54e04d857f5b3b7';
 // - goatcounter : le code choisi sur goatcounter.com (le « monsite » de monsite.goatcounter.com)
 // Rien n'est jamais envoyé depuis localhost.
 const STATS = {
-  umamiId: '',
+  umamiId: '3ab098ea-0ac7-4db9-8819-6fe96b7fa84a',
   goatcounter: '',
 };
 

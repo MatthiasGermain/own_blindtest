@@ -149,7 +149,7 @@ const Salle = (() => {
       const info = await res.json();
       if (info.phase !== 'lobby') { status('La partie a déjà commencé dans cette salle.', true); return; }
       if (info.full) { status('Cette salle est pleine.', true); return; }
-      Stats.track('salle-rejointe');
+      Stats.track('salle-rejointe', { via: $('[data-panel="salle"]').classList.contains('invited') ? 'lien' : 'code' });
       enter({ code, name });
     } catch {
       status('Impossible de joindre la salle. Vérifie ta connexion.', true);
@@ -207,6 +207,9 @@ const Salle = (() => {
   const toPot = (t) => ({ id: t.dzId || t.uri.slice(3), artist: t.artists[0], title: t.name, album: t.album || '', cover: t.cover || '' });
 
   function useMusic(m) {
+    // Which music people bring: the source, and likes, top or playlist (read from our own label).
+    const choix = m.source === 'history' ? 'historique' : /playlist/.test(m.label) ? 'playlist' : /\btop\b/.test(m.label) ? 'top' : 'likes';
+    Stats.track('salle-musique', { source: m.source, choix });
     music = m;
     changing = false;
     $('#room-music-status').textContent = '';
@@ -531,7 +534,7 @@ const Salle = (() => {
   }
 
   function start() {
-    Stats.track('salle-lancee', { joueurs: String(room?.players.length || 0) });
+    Stats.track('salle-lancee', { joueurs: String(room?.players.length || 0), son: room?.sameRoom ? 'meme-piece' : 'chaque-telephone' });
     // Inside the tap: phones only let a page play sound after a touch.
     Deezer.player.activateElement();
     send({ t: 'start' });

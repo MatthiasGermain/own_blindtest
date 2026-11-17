@@ -16,7 +16,9 @@ const Stats = (() => {
   }
 
   if (!local && conf.umamiId) {
-    load('https://cloud.umami.is/script.js', { 'data-website-id': conf.umamiId }, () =>
+    // The page address is counted without its query and hash: they can hold a room code,
+    // a challenge (with a name) or the one-time Spotify login code.
+    load('https://cloud.umami.is/script.js', { 'data-website-id': conf.umamiId, 'data-exclude-search': 'true', 'data-exclude-hash': 'true' }, () =>
       window.umami?.track && ((name, data) => window.umami.track(name, data)));
   } else if (!local && conf.goatcounter) {
     // GoatCounter events have no properties: they are folded into the event path ("partie-lancee/dztop/sudden").

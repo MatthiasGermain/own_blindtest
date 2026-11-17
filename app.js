@@ -125,6 +125,7 @@ function spotifyPause() {
 
 function spotifyRefused(retryAfter) {
   const n = store.get('spotifyRefusals', 0);
+  Stats.track('spotify-bloque', { fois: String(n + 1) });
   store.set('spotifyRefusals', n + 1);
   store.set('spotifyPause', Date.now() + Math.max(retryAfter, PAUSES[Math.min(n, PAUSES.length - 1)]) * 1000);
 }
@@ -697,7 +698,7 @@ function shuffle(arr) {
 const TOP_NAMES = { short_term: 'Top 4 semaines', medium_term: 'Top 6 mois', long_term: 'Top de toujours' };
 
 // The same few facts describe every game in the stats.
-const gameFacts = () => ({ source: game.kind, mode: game.mode, reponses: game.answers, defi: game.challenge ? 'oui' : 'non' });
+const gameFacts = () => ({ source: game.kind, mode: game.mode, reponses: game.answers, defi: game.challenge ? 'oui' : 'non', son: game.engine });
 
 function beginGame(settings) {
   game = { index: 0, results: [], pool: [], challenge: null, fixedStarts: false, engine: 'spotify', answers: 'type', ...settings };
@@ -909,6 +910,7 @@ function next() {
 // Back to the settings mid-game: the sound stops, nothing is scored.
 function quitGame() {
   if (!confirm('Abandonner la partie en cours ?')) return;
+  Stats.track('partie-abandonnee', { ...gameFacts(), titre: String(game.index + 1) });
   clearTimeout(snippetTimer);
   clearTimeout(stallTimer);
   pending = null;
