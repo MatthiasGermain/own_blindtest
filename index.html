@@ -274,6 +274,7 @@
   button.pick:hover:not(:disabled) { border-color: var(--text); box-shadow: 3px 3px 0 0 var(--accent); }
   .room-chosen { font-size: 15px; margin: 0 0 6px; }
   #room-music-chosen .back { margin: 0; }
+  .room-chosen-actions { display: flex; flex-wrap: wrap; gap: 6px 18px; }
   #room-wait { margin-top: 18px; }
   #room-start { font-size: 18px; padding: 13px 28px; }
 
@@ -312,6 +313,14 @@
   .rv-person { display: inline-flex; align-items: center; gap: 8px; color: var(--text); font-size: 18px; }
   .rv-person .avatar { width: 40px; height: 40px; }
   #rv-delta.neg, .delta.neg { color: var(--muted); }
+  .rg-stage.counting #rg-time { color: var(--accent); }
+  .rv-votes { list-style: none; padding: 0; margin: 0; }
+  .rv-votes li { display: grid; grid-template-columns: 36px 1fr; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); animation: rise .4s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 60ms); }
+  .rv-votes .avatar { width: 36px; height: 36px; font-size: 15px; }
+  .rv-votes .status { display: block; margin: 2px 0 0; font-size: 12px; }
+  .rv-votes li.right strong { color: var(--accent); }
+  .rv-votes li.none { color: var(--muted); }
+  #rv-votes-box + .rg-board { margin-top: 0; }
   .rg-board { list-style: none; padding: 0; margin: 14px 0 0; }
   .rg-board li { display: grid; grid-template-columns: 24px 36px 1fr auto auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); animation: rise .4s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 60ms); }
   .rg-board li.me { color: var(--accent); }
@@ -568,13 +577,17 @@
             </div>
             <div id="room-music-chosen" class="hidden">
               <p class="room-chosen">✓ <span id="room-music-label"></span></p>
-              <button id="room-change" class="back" type="button">Changer</button>
+              <div class="room-chosen-actions">
+                <button id="room-reroll" class="back hidden" type="button">Tirer d’autres titres</button>
+                <button id="room-change" class="back" type="button">Changer</button>
+              </div>
             </div>
             <p class="status" id="room-music-status" role="status"></p>
           </div>
           <div class="room-music room-sound">
             <h3>Le son</h3>
             <div class="fields hidden" id="room-same-row"><label><input type="checkbox" id="room-same"> Tous dans la même pièce</label></div>
+            <div class="fields hidden" id="room-countdown-row"><label><input type="checkbox" id="room-countdown"> Décompte 3, 2, 1 avant chaque extrait</label></div>
             <p class="status" id="room-same-info"></p>
           </div>
           <p class="status" id="room-wait"></p>
@@ -595,7 +608,7 @@
             <div class="rg-side">
               <div class="stage rg-stage playing">
                 <span class="stage-big display" id="rg-time">20</span>
-                <span class="rg-stage-q display">Qui écoute ça ?</span>
+                <span class="rg-stage-q display" id="rg-stage-q">Qui écoute ça ?</span>
                 <div class="countdown" id="rg-countdown"><i></i></div>
               </div>
               <div class="controls hidden" id="rg-host">
@@ -627,6 +640,11 @@
               <p class="status" id="rv-detail"></p>
             </div>
             <div>
+              <div id="rv-votes-box" class="hidden">
+                <h3 class="rg-q">Les votes</h3>
+                <ul class="rv-votes" id="rv-votes"></ul>
+                <h3 class="rg-q">Scores</h3>
+              </div>
               <ol class="rg-board" id="rv-board"></ol>
               <div class="actions"><button id="rv-next" class="hidden" type="button">Manche suivante</button><span class="status" id="rv-wait"></span></div>
             </div>
@@ -834,13 +852,13 @@
   </footer>
 </main>
 <!-- Change ?v= on each release: a fresh page then never runs scripts kept in the browser cache. -->
-<script src="config.js?v=24"></script>
-<script src="stats.js?v=24"></script>
-<script src="scoring.js?v=24"></script>
-<script src="challenge.js?v=24"></script>
-<script src="history.js?v=24"></script>
-<script src="deezer.js?v=24"></script>
-<script src="room.js?v=24"></script>
-<script src="app.js?v=24"></script>
+<script src="config.js?v=25"></script>
+<script src="stats.js?v=25"></script>
+<script src="scoring.js?v=25"></script>
+<script src="challenge.js?v=25"></script>
+<script src="history.js?v=25"></script>
+<script src="deezer.js?v=25"></script>
+<script src="room.js?v=25"></script>
+<script src="app.js?v=25"></script>
 </body>
 </html>

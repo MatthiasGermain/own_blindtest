@@ -6,6 +6,7 @@ export const MAX_MESSAGE_BYTES = 32 * 1024;
 export const TRACKS_PER_PLAYER = 15; // each player brings this many tracks to the shared pot
 export const MIN_TRACKS = 5; // below this, a player cannot be ready
 export const ROUND_MS = 20_000; // time to answer, as long as the snippet plays
+export const COUNTDOWN_MS = 3_000; // optional "3, 2, 1" before each round's sound
 export const POINTS = { right: 100, speedMax: 50, ownMiss: -50 };
 
 /** A track a player brings, already found on Deezer (the sound always comes from Deezer). */
@@ -43,7 +44,7 @@ export interface SongOption { title: string; artist: string }
 export interface RoundView {
   index: number; // 0-based
   total: number;
-  startedAt: number; // server clock
+  startedAt: number; // server clock: when the sound starts and answers open (after the countdown, if any)
   deadline: number; // server clock
   now: number; // server clock when sent: lets each device correct its own clock
   cast: CastMember[]; // the possible answers to "whose is it?"
@@ -57,6 +58,7 @@ export interface RoundView {
 export interface RoundResult {
   id: string;
   owner: boolean | null; // null = no answer
+  vote: string | null; // the player they named, null = no answer
   song: boolean | null;
   ownMiss: boolean; // it was their own track and they did not say so
   delta: number;
@@ -89,8 +91,9 @@ export type ClientMessage =
   // The player's tracks for the pot; sent again to change them, while in the lobby.
   | { t: 'music'; source: MusicSource; avatar?: string; tracks: PotTrack[] }
   | { t: 'kick'; id: string } // host only
-  // host only, in the lobby: everyone in the same room → the sound plays on the host's device only
-  | { t: 'settings'; sameRoom: boolean }
+  // host only, in the lobby. sameRoom: everyone in the same room → the sound plays on the host's device only.
+  // countdown: a "3, 2, 1" before each round. A setting left out keeps its value.
+  | { t: 'settings'; sameRoom?: boolean; countdown?: boolean }
   | { t: 'start' } // host only
   | { t: 'answer'; index: number; owner?: string; song?: number } // each answer counts once
   | { t: 'next' } // host only: after a reveal, next round or the final standings
@@ -100,7 +103,7 @@ export type ClientMessage =
 // Server → device
 export type ServerMessage =
   | { t: 'welcome'; you: { id: string; token: string; host: boolean } }
-  | { t: 'room'; code: string; phase: Phase; players: PublicPlayer[]; expiresAt: number; sameRoom: boolean }
+  | { t: 'room'; code: string; phase: Phase; players: PublicPlayer[]; expiresAt: number; sameRoom: boolean; countdown: boolean }
   | { t: 'round'; round: RoundView }
   | { t: 'progress'; index: number; answered: string[]; started: string[] }
   | { t: 'reveal'; reveal: RevealView }

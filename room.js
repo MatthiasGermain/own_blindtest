@@ -19,6 +19,7 @@ const Salle = (() => {
   let retryTimer = null;
   let music = null; // { source, label, avatar, tracks } chosen on this phone
   let changing = false; // the player is picking another source: the server's old one must not hide the picker
+  let played = new Set(); // Deezer ids of the songs heard in this room's games: a new draw avoids them
 
   const available = () => !!BASE;
   const link = (code) => `${location.origin}${location.pathname}?salle=${code}`;
@@ -72,8 +73,10 @@ const Salle = (() => {
       // Answers tapped while the connection was down: the server keeps only the first of each.
       Game.resend();
     } else if (m.t === 'room') {
+      const replay = room && room.phase !== 'lobby' && m.phase === 'lobby';
       room = m;
       render();
+      if (replay && canReroll()) $('#room-music-status').textContent = 'Nouvelle partie : tire d’autres titres pour ne pas réentendre les mêmes.';
     } else if (m.t === 'round') {
       Game.round(m.round);
     } else if (m.t === 'progress') {
@@ -99,6 +102,7 @@ const Salle = (() => {
     saved = null;
     music = null;
     changing = false;
+    played = new Set();
     store.del('salle');
     resetPanel();
     goHome('salle');
@@ -206,10 +210,12 @@ const Salle = (() => {
 
   const toPot = (t) => ({ id: t.dzId || t.uri.slice(3), artist: t.artists[0], title: t.name, album: t.album || '', cover: t.cover || '' });
 
-  function useMusic(m) {
+  // m.pool: every song the 15 were drawn from (app tracks), for a new draw. m.seen: the Deezer ids already sent.
+  function useMusic(m, redraw = false) {
     // Which music people bring: the source, and likes, top or playlist (read from our own label).
     const choix = m.source === 'history' ? 'historique' : /playlist/.test(m.label) ? 'playlist' : /\btop\b/.test(m.label) ? 'top' : 'likes';
-    Stats.track('salle-musique', { source: m.source, choix });
+    Stats.track(redraw ? 'salle-retirage' : 'salle-musique', { source: m.source, choix });
+    m.seen = new Set([...(m.seen || []), ...m.tracks.map((t) => t.id)]);
     music = m;
     changing = false;
     $('#room-music-status').textContent = '';
@@ -232,6 +238,46 @@ const Salle = (() => {
   function likedFirst(liked, top) {
     const hot = new Set(top.map((t) => t.uri));
     return [...shuffle(liked.filter((t) => hot.has(t.uri))), ...shuffle(liked.filter((t) => !hot.has(t.uri)).slice(0, 200))];
+  }
+
+  // The first PER_PLAYER songs of the list that Deezer can play, once each.
+  async function potOf(list) {
+    const tracks = [];
+    const ids = new Set();
+    for (const t of list) {
+      if (tracks.length === PER_PLAYER) break;
+      if (!t.preview) $('#room-music-status').textContent = `Recherche de tes titres sur Deezer… ${tracks.length} / ${PER_PLAYER}`;
+      if (!(t.preview || await Deezer.resolve(t))) continue;
+      const p = toPot(t);
+      if (!ids.has(p.id)) { ids.add(p.id); tracks.push(p); }
+    }
+    return tracks;
+  }
+
+  // Another 15 from the same source: songs never brought first, then the ones not heard yet, the heard ones last.
+  const dzIdOf = (t) => t.dzId || (t.uri?.startsWith('dz:') ? t.uri.slice(3) : '');
+  const canReroll = () => !!music?.pool && music.pool.length > music.tracks.length && (!room || room.phase === 'lobby');
+
+  async function reroll() {
+    if (!canReroll()) return;
+    const m = music;
+    const tier = (t) => (played.has(dzIdOf(t)) ? 2 : m.seen.has(dzIdOf(t)) ? 1 : 0);
+    const order = [0, 1, 2].flatMap((n) => spreadArtists(shuffle(m.pool.filter((t) => tier(t) === n))));
+    $('#room-reroll').disabled = true;
+    $('#room-music-status').textContent = 'Nouveau tirage…';
+    try {
+      const tracks = await potOf(order);
+      if (music !== m) return; // another source was chosen meanwhile
+      if (tracks.length < 5) throw new Error('Pas assez de titres retrouvés sur Deezer.');
+      useMusic({ ...m, tracks }, true);
+      const fresh = tracks.filter((t) => !m.seen.has(t.id)).length;
+      $('#room-music-status').textContent = fresh === tracks.length ? `${fresh} nouveaux titres.`
+        : fresh ? `${fresh} nouveaux titres, ta source n’en a pas plus : les autres sont mélangés.` : 'Ta source n’a pas d’autres titres : les mêmes, dans un autre ordre.';
+    } catch (e) {
+      $('#room-music-status').textContent = e.message;
+    } finally {
+      $('#room-reroll').disabled = false;
+    }
   }
 
   /* Which titles: the account's likes first, then its playlists. */
@@ -286,10 +332,11 @@ const Salle = (() => {
   async function deezerPlaylist(user, p) {
     $('#room-music-status').textContent = `Chargement de « ${p.title} »…`;
     try {
-      const tracks = fromList(await Deezer.profile.playlist(p.id, 500)).slice(0, PER_PLAYER).map(toPot);
+      const all = await Deezer.profile.playlist(p.id, 500);
+      const tracks = await potOf(fromList(all));
       if (tracks.length < 5) throw new Error('Pas assez de titres écoutables dans cette playlist. Choisis-en une autre.');
       hideLists();
-      useMusic({ source: 'deezer', label: `ta playlist « ${p.title} »`, avatar: user.picture || '', tracks });
+      useMusic({ source: 'deezer', label: `ta playlist « ${p.title} »`, avatar: user.picture || '', tracks, pool: all });
     } catch (e) {
       $('#room-music-status').textContent = e.deezer ? 'Playlist introuvable ou privée.' : e.message;
     }
@@ -304,26 +351,22 @@ const Salle = (() => {
       const liked = loved ? await Deezer.profile.playlist(loved.id, 500) : [];
       const enough = liked.length >= MIN_LIKED;
       const pool = spreadArtists(enough ? likedFirst(liked, top) : shuffle(top.slice(0, 40)));
-      const tracks = pool.slice(0, PER_PLAYER).map(toPot);
+      const tracks = await potOf(pool);
       if (tracks.length < 5) throw new Error('Ce profil n’a pas assez de coups de cœur publics. Il doit être public sur Deezer.');
       const label = enough ? `tes coups de cœur Deezer (${user.name})` : `ton top Deezer (${user.name}), faute de coups de cœur`;
       hideLists();
-      useMusic({ source: 'deezer', label, avatar: user.picture || '', tracks });
+      useMusic({ source: 'deezer', label, avatar: user.picture || '', tracks, pool: enough ? liked : top });
     } catch (e) {
       $('#room-music-status').textContent = e.deezer ? 'Profil introuvable ou privé.' : e.message;
     }
   }
 
   async function fromHistory() {
-    const pool = spreadArtists(shuffle(historyTracks().slice(0, 60)));
-    const tracks = [];
-    for (const t of pool) {
-      if (tracks.length === PER_PLAYER) break;
-      $('#room-music-status').textContent = `Recherche de tes titres sur Deezer… ${tracks.length} / ${PER_PLAYER}`;
-      if (await Deezer.resolve(t)) tracks.push(toPot(t));
-    }
+    // The 60 most played songs first; a new draw goes further down the history.
+    const all = historyTracks().slice(0, 150);
+    const tracks = await potOf(spreadArtists(shuffle(all.slice(0, 60))));
     if (tracks.length < 5) { $('#room-music-status').textContent = 'Pas assez de titres retrouvés sur Deezer.'; return; }
-    useMusic({ source: 'history', label: 'ton historique d’écoute', avatar: music?.avatar || '', tracks });
+    useMusic({ source: 'history', label: 'ton historique d’écoute', avatar: music?.avatar || '', tracks, pool: all });
   }
 
   // Spotify: the player's liked songs (the ones they also play the most first), each found on Deezer for
@@ -366,18 +409,13 @@ const Salle = (() => {
   }
 
   // Finds the songs on Deezer, for the preview, until there are enough of them.
-  async function spotifyPot(pool, label) {
-    const say = (text) => { $('#room-music-status').textContent = text; };
+  // first: the songs to try first, in order; all: every song of the source, for a new draw.
+  async function spotifyPot(first, label, all) {
     const avatar = (await spotifyMe())?.images?.[0]?.url || music?.avatar || '';
-    const tracks = [];
-    for (const t of pool) {
-      if (tracks.length === PER_PLAYER) break;
-      say(`Recherche de tes titres sur Deezer… ${tracks.length} / ${PER_PLAYER}`);
-      if (await Deezer.resolve(t)) tracks.push(toPot(t));
-    }
+    const tracks = await potOf(first);
     if (tracks.length < 5) throw new Error('Pas assez de titres retrouvés sur Deezer. Choisis une autre source.');
     hideLists();
-    useMusic({ source: 'spotify', label, avatar, tracks });
+    useMusic({ source: 'spotify', label, avatar, tracks, pool: all });
   }
 
   async function spotifyPlaylist(p) {
@@ -389,7 +427,7 @@ const Salle = (() => {
         for (const it of data.items) { const t = toTrack(it.item ?? it.track, it.added_at); if (t) list.push(t); }
         if (!data.next) break;
       }
-      await spotifyPot(fromList(list).slice(0, 60), `ta playlist « ${p.name} »`);
+      await spotifyPot(fromList(list).slice(0, 60), `ta playlist « ${p.name} »`, list);
     } catch (e) {
       spotifyError(e);
     }
@@ -419,7 +457,7 @@ const Salle = (() => {
         }
       }
       const enough = liked.length >= MIN_LIKED;
-      await spotifyPot(spreadArtists(enough ? likedFirst(liked, top) : shuffle(top.slice(0, 40))), enough ? 'tes titres likés Spotify' : 'ton top Spotify, faute de titres likés');
+      await spotifyPot(spreadArtists(enough ? likedFirst(liked, top) : shuffle(top.slice(0, 40))), enough ? 'tes titres likés Spotify' : 'ton top Spotify, faute de titres likés', enough ? liked : top);
     } catch (e) {
       spotifyError(e);
     }
@@ -469,6 +507,7 @@ const Salle = (() => {
     $('#room-music-pick').classList.toggle('hidden', chosen);
     if (music) $('#room-music-label').textContent = `${music.tracks.length} titres de ${music.label}`;
     else if (chosen) $('#room-music-label').textContent = `${mine.tracks} titres (${SOURCE_NAMES[mine.source]})`;
+    $('#room-reroll').classList.toggle('hidden', !canReroll());
     const dz = store.get('deezerUser');
     $('#room-use-mine').classList.toggle('hidden', !dz);
     if (dz) $('#room-use-mine').textContent = `Mon profil Deezer : ${dz.name}`;
@@ -505,7 +544,7 @@ const Salle = (() => {
       ]);
     }));
     $('#room-count').textContent = `${room.players.length} / 8`;
-    if (!music) renderMusic();
+    renderMusic();
 
     // During a game the lobby steps aside: the round takes the whole screen.
     const playing = room.phase !== 'lobby';
@@ -519,9 +558,12 @@ const Salle = (() => {
     // The sound: on every phone, or only on the host's when everyone sits around it.
     $('#room-same-row').classList.toggle('hidden', !me.host);
     $('#room-same').checked = !!room.sameRoom;
-    $('#room-same-info').textContent = room.sameRoom
+    $('#room-countdown-row').classList.toggle('hidden', !me.host);
+    $('#room-countdown').checked = !!room.countdown;
+    $('#room-same-info').textContent = (room.sameRoom
       ? (me.host ? 'Le son sort seulement de ton téléphone : monte le volume.' : 'Le son sort du téléphone de l’hôte.')
-      : (me.host ? 'Le son sort de chaque téléphone. Coche si vous êtes ensemble, pour éviter l’écho.' : 'Le son sort de chaque téléphone : monte le volume.');
+      : (me.host ? 'Le son sort de chaque téléphone. Coche si vous êtes ensemble, pour éviter l’écho.' : 'Le son sort de chaque téléphone : monte le volume.'))
+      + (room.countdown && !me.host ? ' Un décompte 3, 2, 1 précède chaque extrait.' : '');
 
     const missing = room.players.filter((p) => !p.source).map((p) => p.name);
     const startBtn = $('#room-start');
@@ -553,6 +595,7 @@ const Salle = (() => {
     const person = (id) => cast.find((c) => c.id === id) || room?.players.find((p) => p.id === id) || { id, name: '?', avatar: '' };
     const scoreOf = (id) => room?.players.find((p) => p.id === id)?.score ?? 0;
     const remaining = () => (round ? round.deadline - (Date.now() + offset) : 0);
+    const untilStart = () => (round ? round.startedAt - (Date.now() + offset) : 0); // > 0 during the countdown
     const view = (name) => { for (const v of ['question', 'reveal', 'final']) $(`#rg-${v}`).classList.toggle('hidden', v !== name); };
 
     function reset() {
@@ -586,8 +629,9 @@ const Salle = (() => {
       // What the server already has, completed by what this phone tapped while offline.
       const mine = { ...(local.index === r.index ? local.a : {}), ...r.mine };
       local = { index: r.index, a: mine };
+      let counting = untilStart() > 0;
       const answer = (field, value) => {
-        if (mine[field] !== undefined || remaining() <= 0) return;
+        if (mine[field] !== undefined || remaining() <= 0 || counting) return;
         mine[field] = value;
         send({ t: 'answer', index: r.index, [field]: value });
         paint(field);
@@ -602,11 +646,11 @@ const Salle = (() => {
       function paint(just) {
         [...$('#rg-owners').children].forEach((b, i) => {
           b.setAttribute('aria-pressed', String(r.cast[i].id === mine.owner));
-          b.disabled = mine.owner !== undefined;
+          b.disabled = counting || mine.owner !== undefined;
         });
         [...$('#rg-songs').children].forEach((b, i) => {
           b.setAttribute('aria-pressed', String(i === mine.song));
-          b.disabled = mine.song !== undefined;
+          b.disabled = counting || mine.song !== undefined;
         });
         const both = mine.owner !== undefined && mine.song !== undefined;
         $('#rg-question').classList.toggle('done', both);
@@ -623,14 +667,23 @@ const Salle = (() => {
       paint();
       progress({ index: r.index, answered: r.answered, started: r.started || [] });
 
-      // The clock: a draining bar and the seconds left, on the server's time.
+      // The clock: a draining bar and the seconds left, on the server's time. With the countdown,
+      // "3, 2, 1" first: the bar waits full, the answers stay closed and the sound starts at the end of it.
       const bar = $('#rg-countdown i');
+      const total = r.deadline - r.startedAt;
+      const left = Math.max(0, Math.min(total, remaining()));
       bar.style.animation = 'none';
       void bar.offsetWidth;
-      bar.style.animation = `drain ${Math.max(0, remaining())}ms linear forwards`;
-      bar.style.transform = `scaleX(${Math.max(0, remaining()) / (r.deadline - r.startedAt)})`;
+      bar.style.transform = `scaleX(${left / total})`;
+      bar.style.animation = `drain ${left}ms linear ${Math.max(0, untilStart())}ms forwards`;
+      const stage = $('#rg-question .rg-stage');
       clearInterval(ticker);
       const tick = () => {
+        const wait = untilStart();
+        stage.classList.toggle('counting', wait > 0);
+        $('#rg-stage-q').textContent = wait > 0 ? 'Prêts ?' : 'Qui écoute ça ?';
+        if (wait > 0) { $('#rg-time').textContent = Math.ceil(wait / 1000); return; }
+        if (counting) { counting = false; paint(); }
         const left = Math.max(0, Math.ceil(remaining() / 1000));
         $('#rg-time').textContent = left;
         if (left === 0) {
@@ -644,17 +697,22 @@ const Salle = (() => {
 
       // Every phone plays the sound, or only the host's when everyone is in the same room.
       $('#rg-host').classList.toggle('hidden', !r.trackId);
-      if (r.trackId && soundFor !== r.index) { soundFor = r.index; play(r.trackId); }
+      if (r.trackId && soundFor !== r.index) { soundFor = r.index; play(r.trackId, r.index); }
     }
 
-    async function play(trackId) {
+    async function play(trackId, index) {
       const t = { uri: `dz:${trackId}` };
       $('#rg-sound').textContent = 'Chargement du son…';
       try {
         if (!(await Deezer.refresh(t))) throw new Error('Extrait introuvable sur Deezer.');
         // Starts a little into the song: the very first notes are often a silence or a jingle.
-        await Deezer.player.play(t.preview, 2);
+        await Deezer.player.load(t.preview, 2);
         $('#rg-sound').textContent = '';
+        // Loaded during the countdown, played at its end.
+        const wait = round?.index === index ? untilStart() : 0;
+        if (wait > 0) await new Promise((ok) => setTimeout(ok, wait));
+        if (round?.index !== index) return; // the game moved on meanwhile
+        await Deezer.player.start();
       } catch (e) {
         // A reloaded page may not play sound before a touch: the button below does it.
         $('#rg-sound').textContent = e.name === 'NotAllowedError' ? 'Touche « Réécouter » pour lancer le son.' : e.message;
@@ -705,12 +763,44 @@ const Salle = (() => {
         if (mine.ownMiss) bits.push('Tu n’as pas reconnu ton propre titre (−50)');
         $('#rv-detail').textContent = bits.join(' · ');
       }
+      votes(v);
+      played.add(v.track.id);
       board($('#rv-board'), v.results.map((x) => ({ id: x.id, score: x.score, delta: x.delta })));
 
       const host = room?.players.find((p) => p.id === me.id)?.host;
       $('#rv-next').classList.toggle('hidden', !host);
       $('#rv-next').textContent = v.last ? 'Voir le podium' : 'Manche suivante';
       $('#rv-wait').textContent = host ? '' : v.last ? 'L’hôte va dévoiler le podium…' : 'L’hôte lance la manche suivante…';
+    }
+
+    // Who named whom: each person named, with who named them; the right one first.
+    function votes(v) {
+      const known = v.results.some((x) => 'vote' in x); // a server from before the votes sends none
+      $('#rv-votes-box').classList.toggle('hidden', !known);
+      if (!known) return;
+      const name = (id) => (id === me.id ? 'toi' : person(id).name);
+      const list = (ids) => ids.map(name).join(', ').replace(/, ([^,]*)$/, ' et $1');
+      const named = new Map();
+      for (const x of v.results) if (x.vote) named.set(x.vote, [...(named.get(x.vote) || []), x.id]);
+      const rows = [...named].sort(([a, x], [b, y]) => v.owners.includes(b) - v.owners.includes(a) || y.length - x.length);
+      const silent = v.results.filter((x) => !x.vote).map((x) => x.id);
+      $('#rv-votes').replaceChildren(
+        ...rows.map(([id, by], i) => {
+          const right = v.owners.includes(id);
+          const p = person(id);
+          return el('li', { className: right ? 'right' : '', style: `--i: ${i}` }, [
+            avatarOf(p.avatar, p.name),
+            el('div', {}, [
+              el('strong', { textContent: (id === me.id ? 'Toi' : p.name) + (right ? ' ✓' : '') }),
+              el('span', { className: 'status', textContent: `${by.length} vote${by.length > 1 ? 's' : ''} : ${list(by)}` }),
+            ]),
+          ]);
+        }),
+        ...(silent.length ? [el('li', { className: 'none', style: `--i: ${rows.length}` }, [
+          el('span', { className: 'avatar', textContent: '–', ariaHidden: 'true' }),
+          el('div', {}, [el('strong', { textContent: 'Pas de vote' }), el('span', { className: 'status', textContent: list(silent) })]),
+        ])] : []),
+      );
     }
 
     function board(list, rows) {
@@ -753,7 +843,7 @@ const Salle = (() => {
     }
 
     function wire() {
-      $('#rg-replay').onclick = () => { if (round?.trackId) play(round.trackId); };
+      $('#rg-replay').onclick = () => { if (round?.trackId) play(round.trackId, round.index); };
       // Taps: they also keep the right to play sound on phones.
       $('#rv-next').onclick = () => { Deezer.player.activateElement(); send({ t: 'next' }); };
       $('#fn-replay').onclick = () => send({ t: 'replay' });
@@ -790,7 +880,11 @@ const Salle = (() => {
     $('#room-use-history').onclick = fromHistory;
     $('#room-use-spotify').onclick = fromSpotify;
     $('#room-lists-back').onclick = () => { hideLists(); $('#room-music-status').textContent = ''; };
-    $('#room-same').onchange = (e) => send({ t: 'settings', sameRoom: e.target.checked });
+    // Both settings each time: a server that only knows sameRoom reads it as before.
+    const settings = () => send({ t: 'settings', sameRoom: $('#room-same').checked, countdown: $('#room-countdown').checked });
+    $('#room-same').onchange = settings;
+    $('#room-countdown').onchange = settings;
+    $('#room-reroll').onclick = reroll;
     // Phones only let a page play sound after a touch: any tap in the room unlocks it for the rounds.
     $('#screen-room').addEventListener('click', () => Deezer.player.activateElement(), true);
     $('#room-change').onclick = () => { hideLists(); pickAgain(); };

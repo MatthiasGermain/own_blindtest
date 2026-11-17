@@ -153,7 +153,7 @@ export function scoreRound(r: GameRound, cast: CastMember[], scores: Record<stri
     const ownMiss = r.owners.includes(id) && a.owner !== id;
     const delta = (owner ? points(a.ownerAt, r) : 0) + (song ? points(a.songAt, r) : 0) + (ownMiss ? POINTS.ownMiss : 0);
     scores[id] = (scores[id] ?? 0) + delta;
-    return { id, owner, song, ownMiss, delta, score: scores[id] };
+    return { id, owner, vote: a.owner ?? null, song, ownMiss, delta, score: scores[id] };
   });
 }
 
@@ -186,6 +186,12 @@ function awards(g: Game): Award[] {
       out.push({ ids: [least.id], title: 'Le plus mystérieux', detail });
     }
   }
+
+  // Named the most often for songs that were not theirs.
+  const suspects = g.cast.map(({ id }) => ({
+    id, n: played.reduce((sum, r) => sum + (r.owners.includes(id) ? 0 : r.results!.filter((x) => x.vote === id).length), 0),
+  })).sort((a, b) => b.n - a.n);
+  if (suspects[0]?.n >= 2) out.push({ ids: [suspects[0].id], title: 'Le plus soupçonné', detail: `Désigné ${suspects[0].n} fois pour des titres qui n'étaient pas les siens.` });
 
   const best = [...g.shared].sort((a, b) => b.count - a.count)[0];
   if (best) out.push({ ids: [best.a, best.b], title: 'Âmes sœurs musicales', detail: `${best.count} titre${best.count > 1 ? 's' : ''} en commun dans leurs pots.` });

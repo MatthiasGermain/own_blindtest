@@ -4,7 +4,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { buildGame, finalView, scoreRound, type Game } from './game';
 import {
-  MAX_MESSAGE_BYTES, MAX_PLAYERS, MIN_TRACKS, ROOM_TTL_MS, ROUND_MS, TRACKS_PER_PLAYER,
+  COUNTDOWN_MS, MAX_MESSAGE_BYTES, MAX_PLAYERS, MIN_TRACKS, ROOM_TTL_MS, ROUND_MS, TRACKS_PER_PLAYER,
   type ClientMessage, type ErrorCode, type MusicSource, type Phase, type PotTrack, type PublicPlayer,
   type RevealView, type RoundView, type ServerMessage,
 } from './protocol';
@@ -29,6 +29,7 @@ interface RoomState {
   players: Player[];
   game?: Game | null;
   sameRoom?: boolean; // everyone around one loudspeaker: only the host's device plays the sound
+  countdown?: boolean; // a "3, 2, 1" before each round
 }
 
 interface Attachment { id: string }
@@ -135,7 +136,8 @@ export class Room extends DurableObject {
       case 'settings': {
         if (!me.host) return this.error(ws, 'not-host', 'Seul l’hôte peut changer ça.');
         if (s.phase !== 'lobby') return;
-        s.sameRoom = msg.sameRoom === true;
+        if (typeof msg.sameRoom === 'boolean') s.sameRoom = msg.sameRoom;
+        if (typeof msg.countdown === 'boolean') s.countdown = msg.countdown;
         await this.save(s);
         this.broadcast(s);
         return;
@@ -211,7 +213,7 @@ export class Room extends DurableObject {
     const g = s.game!;
     const r = g.rounds[index];
     g.index = index;
-    r.startedAt = Date.now();
+    r.startedAt = Date.now() + (s.countdown ? COUNTDOWN_MS : 0);
     r.deadline = r.startedAt + ROUND_MS;
     await this.save(s);
     await this.schedule(s);
@@ -258,15 +260,17 @@ export class Room extends DurableObject {
     const r = g.rounds[g.index];
     const now = Date.now();
     if (r.results || !g.cast.some((c) => c.id === me.id) || now > r.deadline + GRACE_MS) return;
+    // A tap during the countdown (a phone whose clock is a little off) counts as made at the start.
+    const at = Math.max(r.startedAt, Math.min(now, r.deadline));
     const a = (r.answers[me.id] ??= {});
     // Each answer counts once: no changing your mind after seeing the others' faces.
     if (msg.owner !== undefined && a.owner === undefined && g.cast.some((c) => c.id === msg.owner)) {
       a.owner = msg.owner;
-      a.ownerAt = Math.min(now, r.deadline);
+      a.ownerAt = at;
     }
     if (msg.song !== undefined && a.song === undefined && Number.isInteger(msg.song) && msg.song >= 0 && msg.song < r.songs.length) {
       a.song = msg.song;
-      a.songAt = Math.min(now, r.deadline);
+      a.songAt = at;
     }
     // Everyone still here has answered: no need to wait for the clock.
     const present = s.players.filter((p) => g.cast.some((c) => c.id === p.id) && this.socketsOf(p.id).length);
@@ -371,7 +375,7 @@ export class Room extends DurableObject {
       id: p.id, name: p.name, avatar: p.avatar, host: p.host, online: this.socketsOf(p.id, closing).length > 0,
       source: p.source, tracks: p.tracks.length, score: s.game?.scores[p.id] ?? 0,
     }));
-    const msg: ServerMessage = { t: 'room', code: s.code, phase: s.phase, players, expiresAt: s.expiresAt, sameRoom: !!s.sameRoom };
+    const msg: ServerMessage = { t: 'room', code: s.code, phase: s.phase, players, expiresAt: s.expiresAt, sameRoom: !!s.sameRoom, countdown: !!s.countdown };
     for (const ws of this.ctx.getWebSockets()) if (ws !== closing) this.send(ws, msg);
   }
 }

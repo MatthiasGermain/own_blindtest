@@ -163,13 +163,18 @@ const Deezer = (() => {
       audio.src = SILENCE;
       audio.play().catch(() => {});
     },
-    async play(src, startSec) {
+    // Loads the snippet and goes to startSec, without playing yet: start() plays it.
+    async load(src, startSec) {
       audio.src = src;
       await new Promise((ok, fail) => {
         audio.addEventListener('loadedmetadata', ok, { once: true });
         audio.addEventListener('error', () => fail(new Error("l'extrait ne se charge pas")), { once: true });
       });
       audio.currentTime = Math.min(startSec, Math.max(0, audio.duration - 5));
+    },
+    start() { return audio.play(); },
+    async play(src, startSec) {
+      await player.load(src, startSec);
       await audio.play();
     },
     pause() { audio.pause(); },
