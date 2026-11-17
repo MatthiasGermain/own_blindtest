@@ -85,6 +85,9 @@ async function handleCallback() {
   store.del('pkce');
   if (!pkce || p.get('state') !== pkce.state) throw new Error('Réponse de connexion invalide, réessaie.');
   await tokenRequest({ grant_type: 'authorization_code', code: p.get('code'), redirect_uri: REDIRECT_URI, code_verifier: pkce.verifier });
+  // Just signed in to Spotify: play its songs, not the source used before (a Deezer profile, say).
+  store.set('source', 'liked');
+  $('#opt-source').value = 'liked';
 }
 
 let refreshing = null;
