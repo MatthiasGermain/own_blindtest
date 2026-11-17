@@ -41,6 +41,13 @@ async function sha256Base64Url(str) {
 }
 
 async function login() {
+  // Already signed in (back from "Changer de source"): no new round trip to Spotify. Not from a room, which wants its lists.
+  if (store.get('token') && !store.get('salleSpotify')) {
+    store.set('source', 'liked');
+    $('#opt-source').value = 'liked';
+    enterSetup();
+    return;
+  }
   const clientId = SPOTIFY_CLIENT_ID || $('#client-id').value.trim();
   if (!clientId) { $('#login-error').textContent = 'Colle ton Client ID.'; return; }
   store.set('clientId', clientId);
@@ -86,8 +93,11 @@ async function handleCallback() {
   if (!pkce || p.get('state') !== pkce.state) throw new Error('Réponse de connexion invalide, réessaie.');
   await tokenRequest({ grant_type: 'authorization_code', code: p.get('code'), redirect_uri: REDIRECT_URI, code_verifier: pkce.verifier });
   // Just signed in to Spotify: play its songs, not the source used before (a Deezer profile, say).
-  store.set('source', 'liked');
-  $('#opt-source').value = 'liked';
+  // Not when the login came from a room: a phone can't play Spotify itself, the solo game keeps its source.
+  if (!store.get('salleSpotify')) {
+    store.set('source', 'liked');
+    $('#opt-source').value = 'liked';
+  }
 }
 
 let refreshing = null;
@@ -152,6 +162,17 @@ async function api(path, opts = {}) {
     return data;
   }
   throw new Error('Trop de requêtes, réessaie dans un moment.');
+}
+
+// The Deezer profile is only a public link: forgetting it is all a "log out" needs.
+function forgetDeezer() {
+  store.del('deezerUser');
+  store.del('dzPlaylist');
+  deezerPlaylists = null;
+  $('#opt-playlist').dataset.from = '';
+  $('#deezer-profile').value = '';
+  if (store.get('token') || store.get('history')) enterSetup();
+  else goHome();
 }
 
 function logout() {
@@ -1053,6 +1074,7 @@ function updateModeHint() {
 
 // The home screen shows one tile per source; a tile opens its own panel, like a screen in an app.
 function openPanel(name) {
+  if (name === 'spotify') $('#btn-login').textContent = store.get('token') ? 'Continuer avec Spotify' : 'Se connecter à Spotify';
   $('#home-pick').classList.toggle('hidden', !!name);
   for (const p of document.querySelectorAll('#screen-login [data-panel]')) p.classList.toggle('hidden', p.dataset.panel !== name);
   window.scrollTo(0, 0);
@@ -1088,6 +1110,7 @@ function enterSetup() {
     options.find((o) => o.value === 'dzplaylist').textContent = `Deezer : une playlist de ${who}`;
   }
   $('#btn-logout').classList.toggle('hidden', !loggedIn);
+  $('#btn-forget-dz').classList.toggle('hidden', !dzUser);
   $('#btn-reload').classList.toggle('hidden', !loggedIn && !dzUser);
   $('#btn-home').textContent = 'Changer de source';
   show('screen-setup');
@@ -1112,6 +1135,7 @@ async function main() {
   $('#btn-login').onclick = login;
   $('#btn-logout').onclick = logout;
   $('#btn-logout-denied').onclick = logout;
+  $('#btn-forget-dz').onclick = forgetDeezer;
   $('#btn-retry').onclick = () => { store.del('liked'); location.reload(); };
   $('#btn-reload').onclick = () => loadSource(true);
   $('#btn-home').onclick = () => goHome();

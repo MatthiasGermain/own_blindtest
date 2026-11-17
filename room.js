@@ -100,8 +100,16 @@ const Salle = (() => {
     music = null;
     changing = false;
     store.del('salle');
+    resetPanel();
     goHome('salle');
     status(message, !!message);
+  }
+
+  // Both choices again (create or join), even after an invitation link.
+  function resetPanel() {
+    $('[data-panel="salle"]').classList.remove('invited');
+    $('#salle-join button').textContent = 'Rejoindre';
+    $('#salle-code').value = '';
   }
 
   /* ---------- Create / join ---------- */
@@ -767,10 +775,7 @@ const Salle = (() => {
     $('#salle-name').value = store.get('pseudo') || store.get('deezerUser')?.name || '';
     $('#salle-create').onclick = create;
     // Opened from the home tile: both choices again, even after an invitation link.
-    $('#tile-salle').addEventListener('click', () => {
-      $('[data-panel="salle"]').classList.remove('invited');
-      $('#salle-join button').textContent = 'Rejoindre';
-    });
+    $('#tile-salle').addEventListener('click', resetPanel);
     $('#salle-join').onsubmit = join;
     $('#salle-code').oninput = (e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4); };
     $('#room-invite').onclick = invite;
@@ -802,20 +807,25 @@ const Salle = (() => {
     store.del('salleSpotify');
     // Back on the page while in a room (reload, phone woken up): straight back to it.
     if (ongoing?.token && (!code || code === ongoing.code)) {
-      try {
-        const res = await fetch(`${BASE}/rooms/${ongoing.code}`);
-        if (res.ok) {
-          enter(ongoing);
-          if (spotifyBack) {
-            pickAgain();
-            const error = $('#login-error').textContent;
-            if (error) { $('#login-error').textContent = ''; $('#room-music-status').textContent = `Connexion Spotify : ${error}`; }
-            else if (store.get('token')) fromSpotify();
-          }
+      // Only a room the server says is gone is given up: a network hiccup keeps the seat and reconnects.
+      const res = await fetch(`${BASE}/rooms/${ongoing.code}`).catch(() => null);
+      if (res?.status === 404) {
+        store.del('salle');
+        if (!code) {
+          goHome('salle');
+          status(`La salle ${ongoing.code} n’existe plus. Crée-en une nouvelle ou rejoins-en une autre.`, true);
           return true;
         }
-      } catch { /* server unreachable: fall through */ }
-      store.del('salle');
+      } else {
+        enter(ongoing);
+        if (spotifyBack) {
+          pickAgain();
+          const error = $('#login-error').textContent;
+          if (error) { $('#login-error').textContent = ''; $('#room-music-status').textContent = `Connexion Spotify : ${error}`; }
+          else if (store.get('token')) fromSpotify();
+        }
+        return true;
+      }
     }
     if (/^[A-Z]{4}$/.test(code)) {
       goHome('salle');
