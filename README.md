@@ -30,7 +30,7 @@ Avec Deezer et le fichier, le son vient des extraits Deezer de 30 secondes. Avec
 - **Deux façons de répondre.** *À choisir* : 4 propositions tirées de ta propre musique, et un curseur pour les années (par défaut sur téléphone). *À taper* : il faut tout écrire, les fautes de frappe sont tolérées.
 - **Des questions qui dépendent de la source.** Artiste, titre, album, année de sortie, année où tu l'as liké, année où tu l'as découvert.
 - **Partage et défis.** Ton résultat se partage en carrés (🟧 tout bon, 🟫 en partie, ⬛ raté). Le lien contient la partie complète : ton pote rejoue les mêmes titres et doit battre ton score, sans compte.
-- **Pochette surprise.** 5 pochettes de tes albums, 6 essais chacune. Chaque essai rend la pochette plus nette et donne un indice : l'année, le genre, les initiales de l'artiste, puis un extrait de 5 secondes. Mêmes carrés à partager (🟧 trouvé, 🟫 bon artiste, ⬛ raté), avec un lien vers les mêmes pochettes.
+- **Pochette surprise.** Un jeu à part sur l'accueil : tu choisis ta musique (profil Deezer, historique ou Spotify), puis 5 pochettes de tes albums, 6 essais chacune. Chaque essai rend la pochette plus nette et donne un indice : l'année, le genre, les initiales de l'artiste, puis un extrait de 5 secondes. Mêmes carrés à partager (🟧 trouvé, 🟫 bon artiste, ⬛ raté), avec un lien vers les mêmes pochettes.
 - **Qui écoute ça ?** Un extrait passe sur chaque téléphone (ou seulement sur celui de l'hôte si tout le monde est dans la même pièce), avec un décompte 3, 2, 1 en option. Chacun devine à qui est le titre et lequel c'est ; la révélation montre qui a voté pour qui, puis un podium avec des titres (« Le plus prévisible », « Âmes sœurs musicales »…).
 
 ## Vie privée
@@ -65,7 +65,7 @@ deezer.js      API publique Deezer (JSONP), profils, albums, lecteur d'extraits
 history.js     lecture des exports Spotify et YouTube Music (ZIP ou JSON)
 scoring.js     barème (textes tolérants, années, artistes multiples)
 challenge.js   liens de défi du blindtest (JSON compressé dans l'URL)
-cover.js       « Pochette surprise » : pochettes pixelisées, indices, défis (#p=…)
+cover.js       « Pochette surprise » : choix de la musique, pochettes pixelisées, indices, défis (#p=…)
 room.js        salles « Qui écoute ça ? » : créer, rejoindre, salon, musique de chacun, manches
 stats.js       mesure d'audience sans cookies (Umami ou GoatCounter)
 config.js      Client ID Spotify, mesure d'audience, adresse du serveur des salles

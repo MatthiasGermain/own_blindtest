@@ -113,7 +113,7 @@ function updateSourceFields(source) {
     chip.classList.toggle('hidden', !chip.dataset.sources.split(' ').includes(kind));
   }
   $('#field-added-name').textContent = (ADDED_NAMES[kind] || ["Année d'ajout"])[0];
-  // A Deezer preview lasts 30 s: « Tout le morceau » would be the same as 30 s.
+  // A Deezer preview lasts 30 s: « Illimitée » would be the same as 30 s.
   const whole = $('#opt-snippet option[value="0"]');
   whole.hidden = whole.disabled = onDeezer(kind);
   if (whole.disabled && $('#opt-snippet').value === '0') $('#opt-snippet').value = '30';
@@ -526,8 +526,6 @@ function updateStartButton() {
   $('#btn-start').disabled = !(tracks.length && (deviceId || !needsSpotify) && selectedFields().length);
   // A challenge plays Deezer previews when Spotify can't: it only waits for a Spotify player still starting.
   $('#btn-challenge').disabled = !!store.get('token') && !deviceId && !$('#player-status').classList.contains('error');
-  // « Pochette surprise » needs only the songs: no player.
-  $('#btn-covers').disabled = !tracks.length;
 }
 
 const TOP_NAMES = { short_term: 'Top 4 semaines', medium_term: 'Top 6 mois', long_term: 'Top de toujours' };
@@ -948,8 +946,12 @@ function enterSetup() {
   if (!$('#opt-source').value || $('#opt-source').selectedOptions[0].disabled) {
     $('#opt-source').value = options.find((o) => !o.disabled)?.value || 'liked';
   }
-  // Short labels in the list (a phone cuts long ones): whose profile it is goes on the link that forgets it.
-  if (dzUser) $('#btn-forget-dz').textContent = `Oublier le profil ${dzUser.name}`;
+  if (dzUser) {
+    const who = dzUser.name;
+    options.find((o) => o.value === 'dztop').textContent = `Deezer : le top de ${who}`;
+    options.find((o) => o.value === 'dzliked').textContent = `Deezer : les coups de cœur de ${who}`;
+    options.find((o) => o.value === 'dzplaylist').textContent = `Deezer : une playlist de ${who}`;
+  }
   $('#btn-logout').classList.toggle('hidden', !loggedIn);
   $('#btn-forget-dz').classList.toggle('hidden', !dzUser);
   $('#btn-reload').classList.toggle('hidden', !loggedIn && !dzUser);
@@ -1037,14 +1039,6 @@ async function main() {
   $('#opt-mode').value = store.get('mode', 'classic');
   if (!$('#opt-mode').value) $('#opt-mode').value = 'classic';
   $('#opt-mode').onchange = updateModeHint;
-  // Blindtest or Pochette surprise: the same music, each game its own options.
-  const pickGame = (g) => { $('#screen-setup').dataset.game = g; store.set('game', g); };
-  const savedGame = store.get('game') === 'covers' ? 'covers' : 'blindtest';
-  for (const r of document.querySelectorAll('input[name="game"]')) {
-    r.checked = r.value === savedGame;
-    r.onchange = () => pickGame(r.value);
-  }
-  pickGame(savedGame);
   updateModeHint();
   captureChallenge();
   $('#guess-form').onsubmit = submitGuess;
@@ -1062,9 +1056,11 @@ async function main() {
   }
   // A failed Spotify login lands back on its own panel, where the error is shown
   // (or back in the room, when it was started from a room's lobby).
-  if ($('#login-error').textContent && !store.get('salleSpotify')) { goHome('spotify'); return; }
+  if ($('#login-error').textContent && !store.get('salleSpotify') && !store.get('pochetteSpotify')) { goHome('spotify'); return; }
   // A room link, or a room this phone is still in, wins over everything else.
   if (await Salle.boot()) return;
+  // A Pochette surprise challenge, or the way back from a Spotify login started on its panel.
+  if (Covers.boot()) return;
   if (!store.get('token') && !store.get('history') && !store.get('deezerUser')) { goHome(); return; }
   enterSetup();
 }

@@ -1,7 +1,9 @@
 // « Pochette surprise » : find the album from its cover, pixelated at first, sharper after each try.
-// The albums come from the songs loaded on the setup screen (app.js `tracks`), or from a challenge link
-// (#p=…: the same five covers as a friend); the details (year, genre, number of songs) from Deezer.
-// It uses the helpers of util.js ($, el, shuffle, store, shareOrCopy, playerName) and app.js (show, ask, backToSetup, goHome).
+// A game of its own on the home screen: the player picks their music on its panel (a Deezer profile, their history
+// or Spotify), or opens a challenge link (#p=…: the same five covers as a friend). The details (year, genre,
+// number of songs) come from Deezer.
+// It uses the helpers of util.js ($, el, shuffle, store, shareOrCopy, playerName), app.js (show, ask, goHome,
+// historyTracks) and spotify.js (login, api, toTrack).
 const Covers = (() => {
   const ROUNDS = 5;
   const TRIES = 6;
@@ -64,36 +66,146 @@ const Covers = (() => {
     };
   }
 
+  /* ---------- Which music: picked on its own home panel, like in « Qui écoute ça ? » ---------- */
+
+  let picked = null; // { source, list }: the songs of the last music picked, dealt again by « Rejouer »
+
+  function say(text, error = false) {
+    $('#covers-status').textContent = text;
+    $('#covers-status').classList.toggle('error', error);
+  }
+
+  // The panel offers what this browser already knows (a Deezer profile, a history, Spotify) and a Deezer search.
+  function renderSources() {
+    const dz = store.get('deezerUser');
+    $('#cv-use-dz').classList.toggle('hidden', !dz);
+    if (dz) $('#cv-use-dz').textContent = `Mon profil Deezer : ${dz.name}`;
+    $('#cv-use-history').classList.toggle('hidden', !store.get('history'));
+    $('#cv-use-spotify').classList.toggle('hidden', !(SPOTIFY_CLIENT_ID || store.get('clientId')));
+  }
+
+  function toPanel() {
+    renderSources();
+    goHome('pochette');
+  }
+
+  const panelOpen = () => !$('#screen-login').classList.contains('hidden') && !$('[data-panel="pochette"]').classList.contains('hidden');
+
+  // Loads the songs of a source, then deals five covers from them. explain: a clearer message for some errors.
+  async function play(source, loading, load, explain = () => null) {
+    const buttons = document.querySelectorAll('.cv-sources button, #cv-dz-form button');
+    for (const b of buttons) b.disabled = true;
+    say(loading);
+    try {
+      const from = { source, list: await load() };
+      if (!panelOpen()) return; // the player went elsewhere meanwhile
+      if (await deal(from, say, panelOpen)) picked = from;
+    } catch (e) {
+      say(explain(e) || e.message || 'Ça n’a pas marché. Réessaie.', true);
+    } finally {
+      for (const b of buttons) b.disabled = false;
+    }
+  }
+
+  // A Deezer profile: the albums of its coups de cœur and of its top.
+  function fromDeezer(user) {
+    $('#cv-dz-results').replaceChildren();
+    return play('deezer', `Chargement des albums de ${user.name}…`, async () => {
+      const lists = await Deezer.profile.playlists(user.id);
+      const loved = lists.find((p) => p.loved);
+      const [liked, top] = await Promise.all([loved ? Deezer.profile.playlist(loved.id, 500) : [], Deezer.profile.top(user.id).catch(() => [])]);
+      return [...liked, ...top];
+    }, (e) => (e.deezer ? 'Profil introuvable ou privé : il doit être public sur Deezer.' : null));
+  }
+
+  function fromHistory() {
+    return play('history', 'Lecture de ton historique…', async () => historyTracks());
+  }
+
+  // Spotify: the liked songs and the top. Without a session yet, the login leaves the page; boot() comes back here.
+  async function fromSpotify() {
+    if (!store.get('token')) {
+      store.set('pochetteSpotify', true);
+      await login();
+      return;
+    }
+    await play('spotify', 'Lecture de tes titres Spotify…', async () => {
+      // The solo blindtest may already have them all; otherwise the 200 most recent are enough.
+      const liked = store.get('liked') || [];
+      if (!liked.length) {
+        for (let offset = 0; offset < 200; offset += 50) {
+          const data = await api(`/me/tracks?limit=50&offset=${offset}`);
+          for (const it of data.items) { const t = toTrack(it.track, it.added_at); if (t) liked.push(t); }
+          if (!data.next) break;
+        }
+      }
+      const top = (await api('/me/top/tracks?limit=50&time_range=medium_term')).items.map((t) => toTrack(t, null)).filter(Boolean);
+      return [...liked, ...top];
+    }, (e) => {
+      // api() shows its "not allowed" screen: the player stays on this panel instead.
+      if (e.notRegistered) { toPanel(); return 'Ton compte Spotify n’est pas encore autorisé sur le jeu (Spotify limite le nombre de comptes pour l’instant). Choisis une autre source.'; }
+      if (/token|non connecté|refresh/i.test(e.message || '')) { store.del('token'); return 'Ta connexion Spotify a expiré. Touche « Mon compte Spotify » pour te reconnecter.'; }
+      return null;
+    });
+  }
+
+  async function searchDeezer(e) {
+    e.preventDefault();
+    const q = $('#cv-dz-query').value.trim();
+    const list = $('#cv-dz-results');
+    list.replaceChildren();
+    if (!q) return;
+    const id = Deezer.profile.id(q);
+    say('Recherche…');
+    try {
+      const users = id ? [await Deezer.profile.user(id)] : await Deezer.profile.search(q);
+      say(users.length ? 'Lequel est ton profil ?' : 'Aucun profil à ce nom. Essaie le lien de ton profil.');
+      list.replaceChildren(...users.map((u) => el('li', {}, el('button', { type: 'button', className: 'pick', onclick: () => fromDeezer(u) }, [
+        u.picture ? el('img', { className: 'avatar', src: u.picture, alt: '', loading: 'lazy' })
+          : el('span', { className: 'avatar', textContent: u.name.slice(0, 1).toUpperCase(), ariaHidden: 'true' }),
+        el('span', { textContent: u.name }),
+      ]))));
+    } catch {
+      say('Profil introuvable ou privé.', true);
+    }
+  }
+
   /* ---------- Game ---------- */
 
-  // from: 'setup' (the setup screen's button) or 'end' (« Rejouer »): where the progress is shown.
-  async function start(from = 'setup') {
-    const list = candidates(typeof tracks !== 'undefined' ? tracks : []);
-    const out = $(from === 'end' ? '#cv-share-feedback' : '#covers-status');
-    const button = $(from === 'end' ? '#cv-again' : '#btn-covers');
-    const say = (text, error = false) => { out.textContent = text; out.classList.toggle('error', error); };
-    if (list.length < ROUNDS) { say(`Il faut au moins ${ROUNDS} albums différents dans ces titres. Choisis une autre source.`, true); return; }
+  // Five albums with a cover, of five different artists, from the songs picked.
+  // out: where the progress shows; alive: false once the player went elsewhere. Resolves to true once the game starts.
+  async function deal(from, out, alive) {
+    const list = candidates(from.list);
+    if (list.length < ROUNDS) throw new Error(`Il faut au moins ${ROUNDS} albums différents dans ces titres. Choisis une autre source.`);
+    const rounds = [];
+    const artists = new Set();
+    for (const e of list) {
+      if (rounds.length === ROUNDS) break;
+      if (artists.has(norm(e.artist))) continue;
+      out(`Préparation des pochettes… ${rounds.length} / ${ROUNDS}`);
+      const a = await details(e).catch((err) => { throw new Error(`Deezer ne répond pas (${err.message}).`); });
+      if (!a) continue;
+      rounds.push(a);
+      artists.add(norm(a.artist));
+    }
+    if (rounds.length < 3) throw new Error('Pas assez de pochettes retrouvées. Choisis une autre source.');
+    out('');
+    if (!alive()) return false;
+    Stats.track('pochette-lancee', { source: from.source });
+    begin(rounds, list, null);
+    return true;
+  }
+
+  // « Rejouer » on the end screen: five other covers from the same music.
+  async function again() {
+    if (!picked) return;
+    const button = $('#cv-again');
+    const out = (text, error = false) => { $('#cv-share-feedback').textContent = text; $('#cv-share-feedback').classList.toggle('error', error); };
     button.disabled = true;
-    say('Préparation des pochettes…');
     try {
-      // Five albums with a cover, of five different artists.
-      const rounds = [];
-      const artists = new Set();
-      for (const e of list) {
-        if (rounds.length === ROUNDS) break;
-        if (artists.has(norm(e.artist))) continue;
-        say(`Préparation des pochettes… ${rounds.length} / ${ROUNDS}`);
-        const a = await details(e);
-        if (!a) continue;
-        rounds.push(a);
-        artists.add(norm(a.artist));
-      }
-      if (rounds.length < 3) { say('Pas assez de pochettes retrouvées. Choisis une autre source.', true); return; }
-      say('');
-      Stats.track('pochette-lancee', { source: ($('#opt-source').value || '').split(':')[0] });
-      begin(rounds, list, null);
+      await deal(picked, out, () => !$('#screen-cover').classList.contains('hidden'));
     } catch (e) {
-      say(`Deezer ne répond pas (${e.message}).`, true);
+      out(e.message, true);
     } finally {
       button.disabled = false;
     }
@@ -137,7 +249,7 @@ const Covers = (() => {
 
   const gridText = (lines) => lines.map((l) => [...l].map((d) => MARK[VERDICTS[d]] || '').join('')).join('\n');
 
-  // Called at start-up: a #p= link shows its challenge on the home and settings screens.
+  // Called at start-up: a #p= link shows its challenge on the home screen.
   function capture() {
     const code = location.hash.match(/^#p=([A-Za-z0-9_-]+)$/)?.[1];
     if (!code) return;
@@ -407,8 +519,9 @@ const Covers = (() => {
       $('#cv-end-grid-them').replaceChildren(el('small', { textContent: c.name }), gridText(c.grid));
       $('#cv-end-grid').prepend(el('small', { textContent: 'Toi' }));
     }
-    // « Rejouer » draws from the loaded songs: none after a challenge opened without a source.
-    $('#cv-again').classList.toggle('hidden', typeof tracks === 'undefined' || !tracks.length);
+    // « Rejouer » draws from the music picked: none after a challenge opened without one.
+    $('#cv-again').classList.toggle('hidden', !picked);
+    $('#cv-settings').textContent = picked ? 'Changer de musique' : 'Jouer avec ma musique';
     window.scrollTo(0, 0);
     Stats.track('pochette-finie', { score: Stats.bucket(points(), max), defi: c ? 'oui' : 'non' });
   }
@@ -433,8 +546,8 @@ const Covers = (() => {
     if (await ask('Abandonner la partie en cours ?', 'Abandonner')) quit();
   }
 
-  // to: where the player goes (the settings by default, home from the end screen's « ← Accueil »).
-  function quit(to = backToSetup) {
+  // to: where the player goes (the game's panel by default, home from the end screen's « ← Accueil »).
+  function quit(to = toPanel) {
     clearTimeout(snippetTimer);
     Deezer.player.pause();
     game = null;
@@ -443,13 +556,17 @@ const Covers = (() => {
   }
 
   function wire() {
-    $('#btn-covers').onclick = () => start('setup');
+    document.querySelector('[data-open="pochette"]').addEventListener('click', () => { renderSources(); say(''); $('#cv-dz-results').replaceChildren(); });
+    $('#cv-use-dz').onclick = () => fromDeezer(store.get('deezerUser'));
+    $('#cv-use-history').onclick = fromHistory;
+    $('#cv-use-spotify').onclick = fromSpotify;
+    $('#cv-dz-form').onsubmit = searchDeezer;
     $('#cv-form').onsubmit = submit;
     $('#cv-guess').oninput = suggest;
     $('#cv-skip').onclick = () => guess(null);
     $('#cv-listen').onclick = listen;
     $('#cv-next').onclick = next;
-    $('#cv-again').onclick = () => start('end');
+    $('#cv-again').onclick = again;
     $('#cv-settings').onclick = () => quit();
     $('#cv-share').onclick = share;
     $('#cv-quit').onclick = confirmQuit;
@@ -461,5 +578,19 @@ const Covers = (() => {
     capture();
   }
 
-  return { wire, start, back };
+  // At start-up: a challenge link opens on the home screen, and a Spotify login started on the panel comes back to it.
+  function boot() {
+    if (store.get('pochetteSpotify')) {
+      store.del('pochetteSpotify');
+      toPanel();
+      const error = $('#login-error').textContent;
+      if (error) say(error, true);
+      else fromSpotify();
+      return true;
+    }
+    if (dare) { goHome(); return true; }
+    return false;
+  }
+
+  return { wire, boot, back };
 })();
