@@ -231,14 +231,17 @@ const Covers = (() => {
     // Albums already tried are not offered again.
     const keys = new Set(round.tries.filter((t) => t.key).map((t) => t.key));
     const fresh = (a) => !keys.has(keyOf(a)) && keys.add(keyOf(a));
-    const mine = game.library.filter((e) => (artistOnly ? norm(e.artist) === n : norm(e.title).includes(n) || norm(e.artist).includes(n)))
-      .map((e) => ({ title: e.title, artist: e.artist, id: null })).filter(fresh).slice(0, artistOnly ? max : 4);
-    render(mine);
+    // The order is Deezer's, which knows nothing of the answer. The player's own albums come only after,
+    // in alphabetical order, when Deezer does not have them: listed first, the answer (always one of
+    // them, and the first drawn) was too often on top.
     const seq = ++suggestSeq;
     suggestTimer = setTimeout(async () => {
       const found = await (artistOnly ? discography(q) : Deezer.album.search(q, max)).catch(() => []);
       if (seq !== suggestSeq) return;
-      render([...mine, ...found.filter(fresh)].slice(0, max));
+      const mine = game.library.filter((e) => (artistOnly ? norm(e.artist) === n : norm(e.title).includes(n) || norm(e.artist).includes(n)))
+        .map((e) => ({ title: e.title, artist: e.artist, id: null }))
+        .sort((a, b) => a.title.localeCompare(b.title, 'fr'));
+      render([...found, ...mine].filter(fresh).slice(0, max));
     }, artistOnly ? 0 : 250);
     function render(list) {
       shown = list;
