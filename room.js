@@ -558,7 +558,8 @@ const Salle = (() => {
     // The sound: on every phone, or only on the host's when everyone sits around it.
     $('#room-same-row').classList.toggle('hidden', !me.host);
     $('#room-same').checked = !!room.sameRoom;
-    $('#room-countdown-row').classList.toggle('hidden', !me.host);
+    // A server not yet updated knows no countdown (it leaves the field out): the box would untick itself.
+    $('#room-countdown-row').classList.toggle('hidden', !me.host || !('countdown' in room));
     $('#room-countdown').checked = !!room.countdown;
     $('#room-same-info').textContent = (room.sameRoom
       ? (me.host ? 'Le son sort seulement de ton téléphone : monte le volume.' : 'Le son sort du téléphone de l’hôte.')
@@ -668,7 +669,7 @@ const Salle = (() => {
       progress({ index: r.index, answered: r.answered, started: r.started || [] });
 
       // The clock: a draining bar and the seconds left, on the server's time. With the countdown,
-      // "3, 2, 1" first: the bar waits full, the answers stay closed and the sound starts at the end of it.
+      // "3, 2, 1" first: the bar waits full, the answers stay hidden and the sound starts at the end of it.
       const bar = $('#rg-countdown i');
       const total = r.deadline - r.startedAt;
       const left = Math.max(0, Math.min(total, remaining()));
@@ -681,6 +682,8 @@ const Salle = (() => {
       const tick = () => {
         const wait = untilStart();
         stage.classList.toggle('counting', wait > 0);
+        // The answers show only at "top": nobody reads the titles ahead of the sound.
+        $('#rg-question').classList.toggle('counting', wait > 0);
         $('#rg-stage-q').textContent = wait > 0 ? 'Prêts ?' : 'Qui écoute ça ?';
         if (wait > 0) { $('#rg-time').textContent = Math.ceil(wait / 1000); return; }
         if (counting) { counting = false; paint(); }
@@ -751,57 +754,64 @@ const Salle = (() => {
       }));
       $('#rv-owners-label').textContent = v.owners.length > 1 ? 'C’était à tous les deux…' : 'C’était à';
 
-      const mine = v.results.find((x) => x.id === me.id);
+      // How many named the right person, among those it wasn't to.
+      const guessers = v.results.filter((x) => !v.owners.includes(x.id));
+      const right = guessers.filter((x) => x.owner).length;
+      $('#rv-found').textContent = guessers.length ? `${right} sur ${guessers.length} ${right > 1 ? 'ont' : 'a'} deviné` : '';
+
+      const rows = ranked(v.results, v.index > 0); // after the first round everyone was tied: no moves to show
+      const mine = rows.find((x) => x.id === me.id);
       if (mine) {
         const d = $('#rv-delta');
         d.textContent = mine.delta > 0 ? `+${mine.delta}` : String(mine.delta);
-        d.classList.toggle('neg', mine.delta < 0);
-        const bits = [
-          mine.owner === null ? 'Qui : pas de réponse' : mine.owner ? 'Qui : bien vu' : 'Qui : raté',
-          mine.song === null ? 'Titre : pas de réponse' : mine.song ? 'Titre : trouvé' : 'Titre : raté',
-        ];
-        if (mine.ownMiss) bits.push('Tu n’as pas reconnu ton propre titre (−50)');
-        $('#rv-detail').textContent = bits.join(' · ');
+        d.classList.toggle('neg', mine.delta <= 0);
+        $('#rv-rank').replaceChildren(`${mine.rank}${mine.rank === 1 ? 'er' : 'e'} `, ...move(mine), el('small', { textContent: ` · ${mine.score} pts` }));
+        $('#rv-marks').replaceChildren(mark(mine.owner, 'qui'), mark(mine.song, 'titre'));
+        $('#rv-detail').textContent = mine.ownMiss ? 'Tu n’as pas reconnu ton propre titre (−50).' : '';
       }
-      votes(v);
-      played.add(v.track.id);
-      board($('#rv-board'), v.results.map((x) => ({ id: x.id, score: x.score, delta: x.delta })));
+      const known = v.results.some((x) => 'vote' in x); // a server from before the votes sends none
+      $('#rv-head-vote').textContent = known ? 'a voté' : 'qui';
+      $('#rv-board').replaceChildren(...rows.map((r, i) => {
+        const p = person(r.id);
+        const voted = r.vote ? person(r.vote) : null;
+        return el('li', { className: `rv-row${r.id === me.id ? ' me' : ''}`, style: `--i: ${i}` }, [
+          el('span', { className: 'rv-pos' }, [String(r.rank), ...move(r)]),
+          avatarOf(p.avatar, p.name),
+          el('span', { className: 'rv-name', textContent: p.id === me.id ? 'Toi' : p.name }),
+          el('span', { className: 'rv-vote', title: voted ? `a voté ${voted.name}` : 'pas de vote' },
+            known && voted ? [avatarOf(voted.avatar, voted.name), icon(r.owner)] : [icon(r.owner)]),
+          el('span', { className: 'rv-mark' }, [icon(r.song)]),
+          el('span', { className: 'rv-pts' }, [
+            el('strong', { textContent: r.score }),
+            el('span', { className: r.delta < 0 ? 'neg' : '', textContent: r.delta > 0 ? `+${r.delta}` : r.delta ? String(r.delta) : '' }),
+          ]),
+        ]);
+      }));
 
+      played.add(v.track.id);
       const host = room?.players.find((p) => p.id === me.id)?.host;
       $('#rv-next').classList.toggle('hidden', !host);
       $('#rv-next').textContent = v.last ? 'Voir le podium' : 'Manche suivante';
       $('#rv-wait').textContent = host ? '' : v.last ? 'L’hôte va dévoiler le podium…' : 'L’hôte lance la manche suivante…';
     }
 
-    // Who named whom: each person named, with who named them; the right one first.
-    function votes(v) {
-      const known = v.results.some((x) => 'vote' in x); // a server from before the votes sends none
-      $('#rv-votes-box').classList.toggle('hidden', !known);
-      if (!known) return;
-      const name = (id) => (id === me.id ? 'toi' : person(id).name);
-      const list = (ids) => ids.map(name).join(', ').replace(/, ([^,]*)$/, ' et $1');
-      const named = new Map();
-      for (const x of v.results) if (x.vote) named.set(x.vote, [...(named.get(x.vote) || []), x.id]);
-      const rows = [...named].sort(([a, x], [b, y]) => v.owners.includes(b) - v.owners.includes(a) || y.length - x.length);
-      const silent = v.results.filter((x) => !x.vote).map((x) => x.id);
-      $('#rv-votes').replaceChildren(
-        ...rows.map(([id, by], i) => {
-          const right = v.owners.includes(id);
-          const p = person(id);
-          return el('li', { className: right ? 'right' : '', style: `--i: ${i}` }, [
-            avatarOf(p.avatar, p.name),
-            el('div', {}, [
-              el('strong', { textContent: (id === me.id ? 'Toi' : p.name) + (right ? ' ✓' : '') }),
-              el('span', { className: 'status', textContent: `${by.length} vote${by.length > 1 ? 's' : ''} : ${list(by)}` }),
-            ]),
-          ]);
-        }),
-        ...(silent.length ? [el('li', { className: 'none', style: `--i: ${rows.length}` }, [
-          el('span', { className: 'avatar', textContent: '–', ariaHidden: 'true' }),
-          el('div', {}, [el('strong', { textContent: 'Pas de vote' }), el('span', { className: 'status', textContent: list(silent) })]),
-        ])] : []),
-      );
+    // Ranks after this round and before it (ties share a rank), best first.
+    function ranked(results, moves = true) {
+      const rank = (x, key) => 1 + results.filter((y) => key(y) > key(x)).length;
+      const before = (x) => x.score - x.delta;
+      return results.map((x) => {
+        const now = rank(x, (y) => y.score);
+        return { ...x, rank: now, was: moves ? rank(x, before) : now };
+      })
+        .sort((a, b) => a.rank - b.rank || b.delta - a.delta);
     }
+    // "▲2" or "▼1" next to a rank that moved this round.
+    function move(r) {
+      const n = r.was - r.rank;
+      return n ? [el('small', { className: n > 0 ? 'is-ok' : 'is-ko', textContent: `${n > 0 ? '▲' : '▼'}${Math.abs(n)}` })] : [];
+    }
+    const icon = (ok) => el('span', { className: ok ? 'is-ok' : 'is-ko', textContent: ok ? '✓' : ok === false ? '✗' : '–', title: ok ? 'trouvé' : ok === false ? 'raté' : 'pas de réponse' });
+    const mark = (ok, what) => el('span', { className: ok ? 'is-ok' : 'is-ko', textContent: `${ok ? '✓' : ok === false ? '✗' : '–'} ${what}` });
 
     function board(list, rows) {
       const sorted = [...rows].sort((a, b) => b.score - a.score);

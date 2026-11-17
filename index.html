@@ -314,13 +314,45 @@
   .rv-person .avatar { width: 40px; height: 40px; }
   #rv-delta.neg, .delta.neg { color: var(--muted); }
   .rg-stage.counting #rg-time { color: var(--accent); }
-  .rv-votes { list-style: none; padding: 0; margin: 0; }
-  .rv-votes li { display: grid; grid-template-columns: 36px 1fr; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); animation: rise .4s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 60ms); }
-  .rv-votes .avatar { width: 36px; height: 36px; font-size: 15px; }
-  .rv-votes .status { display: block; margin: 2px 0 0; font-size: 12px; }
-  .rv-votes li.right strong { color: var(--accent); }
-  .rv-votes li.none { color: var(--muted); }
-  #rv-votes-box + .rg-board { margin-top: 0; }
+  .rg-owners, .rg-songs { transition: opacity .25s; }
+  .rg-question.counting .rg-owners, .rg-question.counting .rg-songs { opacity: 0; visibility: hidden; }
+  /* Between rounds: your result, then one table (rank, vote, title, points), then the song. */
+  .rg-reveal { display: grid; gap: 18px; }
+  .rv-me { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; }
+  .rv-me .big { font-size: 64px; letter-spacing: -0.02em; }
+  .rv-me .big.neg { color: var(--muted); }
+  .rv-rank { margin: 0; font: 900 24px/1.1 var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; }
+  .rv-rank small { font: 400 13px var(--font-ui); color: var(--muted); }
+  .rv-marks { margin: 6px 0 0; display: flex; gap: 14px; font-size: 13px; }
+  .rv-note { margin: 0; flex-basis: 100%; }
+  .is-ok { color: var(--accent); }
+  .is-ko { color: var(--ko); }
+  .rv-row { display: grid; grid-template-columns: 36px 30px minmax(0, 1fr) 46px 30px 52px; gap: 8px; align-items: center; }
+  .rv-head { font-size: 11px; color: var(--muted); padding-bottom: 4px; }
+  .rv-head span:nth-child(n+4) { text-align: center; }
+  .rv-head span:last-child { text-align: right; }
+  .rv-board { list-style: none; padding: 0; margin: 0; }
+  .rv-board li { padding: 7px 0; border-top: 1px solid var(--line); animation: rise .4s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 50ms); }
+  .rv-board li.me { color: var(--accent); background: rgba(255, 102, 20, .1); margin: 0 -8px; padding: 7px 8px; }
+  .rv-board .avatar { width: 30px; height: 30px; font-size: 13px; }
+  .rv-pos { font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .rv-pos small { font-size: 10px; margin-left: 2px; }
+  .rv-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rv-vote { display: inline-flex; align-items: center; justify-content: center; gap: 2px; font-size: 12px; }
+  .rv-vote .avatar { width: 22px; height: 22px; font-size: 10px; }
+  .rv-mark { text-align: center; }
+  .rv-pts { text-align: right; line-height: 1.1; }
+  .rv-pts strong { display: block; font: 900 20px var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; font-variant-numeric: tabular-nums; color: var(--text); }
+  .rv-pts span { font-size: 11px; color: var(--accent); }
+  .rv-pts span.neg { color: var(--muted); }
+  .rv-song { display: flex; gap: 14px; align-items: center; padding-top: 14px; border-top: 1px solid var(--line-strong); }
+  .rv-song img { width: 72px; height: 72px; object-fit: cover; flex-shrink: 0; border: 1px solid var(--line-strong); }
+  .rv-song p { margin: 0; }
+  .rv-song .rv-title { font-size: 24px; margin-bottom: 2px; }
+  .rv-song .rv-owner { margin: 8px 0 2px; gap: 6px 8px; font-size: 13px; }
+  .rv-song .rv-person { font-size: 14px; }
+  .rv-song .rv-person .avatar { width: 26px; height: 26px; font-size: 12px; }
+  .rv-actions { margin-top: 0; }
   .rg-board { list-style: none; padding: 0; margin: 14px 0 0; }
   .rg-board li { display: grid; grid-template-columns: 24px 36px 1fr auto auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); animation: rise .4s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 60ms); }
   .rg-board li.me { color: var(--accent); }
@@ -399,6 +431,14 @@
     .rg-q:first-child { margin-top: 0; }
     .reveal img { width: 160px; height: 160px; }
     .rv-title { font-size: 48px; }
+    .rg-reveal { grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); grid-template-areas: "me song" "table song" "actions song" ". song"; grid-template-rows: auto auto auto 1fr; gap: 20px 44px; }
+    .rv-me { grid-area: me; }
+    .rv-table { grid-area: table; }
+    .rv-actions { grid-area: actions; }
+    .rv-song { grid-area: song; flex-direction: column; align-items: stretch; padding-top: 0; border-top: 0; position: sticky; top: 24px; }
+    .rv-song img { width: min(100%, 300px); height: auto; aspect-ratio: 1; }
+    .rv-song .rv-title { font-size: 36px; }
+    .rv-song .rv-owner { font-size: 14px; }
     .panel { max-width: 720px; padding: 32px 36px; }
     #login-challenge { max-width: 720px; }
 
@@ -655,24 +695,28 @@
           </div>
 
           <div id="rg-reveal" class="hidden rg-reveal">
-            <div class="rg-side">
-              <div class="reveal">
-                <img id="rv-cover" alt="">
-                <div><p class="rv-title display" id="rv-title"></p><p class="status" id="rv-artist" style="margin:0"></p></div>
-              </div>
-              <p class="rv-owner"><span id="rv-owners-label">C'était à</span> <span id="rv-owners"></span></p>
+            <div class="rv-me">
               <p class="big" id="rv-delta"></p>
-              <p class="status" id="rv-detail"></p>
-            </div>
-            <div>
-              <div id="rv-votes-box" class="hidden">
-                <h3 class="rg-q">Les votes</h3>
-                <ul class="rv-votes" id="rv-votes"></ul>
-                <h3 class="rg-q">Scores</h3>
+              <div>
+                <p class="rv-rank" id="rv-rank"></p>
+                <p class="rv-marks" id="rv-marks"></p>
               </div>
-              <ol class="rg-board" id="rv-board"></ol>
-              <div class="actions"><button id="rv-next" class="hidden" type="button">Manche suivante</button><span class="status" id="rv-wait"></span></div>
+              <p class="status rv-note" id="rv-detail"></p>
             </div>
+            <div class="rv-table">
+              <div class="rv-row rv-head" aria-hidden="true"><span></span><span></span><span></span><span id="rv-head-vote">a voté</span><span>titre</span><span>points</span></div>
+              <ol class="rv-board" id="rv-board"></ol>
+            </div>
+            <div class="rv-song">
+              <img id="rv-cover" alt="">
+              <div>
+                <p class="rv-title display" id="rv-title"></p>
+                <p class="status" id="rv-artist"></p>
+                <p class="rv-owner"><span id="rv-owners-label">C'était à</span> <span id="rv-owners"></span></p>
+                <p class="status" id="rv-found"></p>
+              </div>
+            </div>
+            <div class="actions rv-actions"><button id="rv-next" class="hidden" type="button">Manche suivante</button><span class="status" id="rv-wait"></span></div>
           </div>
 
           <div id="rg-final" class="hidden rg-final">
@@ -938,14 +982,14 @@
   </footer>
 </main>
 <!-- Change ?v= on each release: a fresh page then never runs scripts kept in the browser cache. -->
-<script src="config.js?v=31"></script>
-<script src="stats.js?v=31"></script>
-<script src="scoring.js?v=31"></script>
-<script src="challenge.js?v=31"></script>
-<script src="history.js?v=31"></script>
-<script src="deezer.js?v=31"></script>
-<script src="room.js?v=31"></script>
-<script src="cover.js?v=31"></script>
-<script src="app.js?v=31"></script>
+<script src="config.js?v=36"></script>
+<script src="stats.js?v=36"></script>
+<script src="scoring.js?v=36"></script>
+<script src="challenge.js?v=36"></script>
+<script src="history.js?v=36"></script>
+<script src="deezer.js?v=36"></script>
+<script src="room.js?v=36"></script>
+<script src="cover.js?v=36"></script>
+<script src="app.js?v=36"></script>
 </body>
 </html>
