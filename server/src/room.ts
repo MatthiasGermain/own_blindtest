@@ -62,6 +62,17 @@ function cleanTracks(raw: unknown): PotTrack[] {
 }
 const ready = (p: Player) => p.tracks.length >= MIN_TRACKS;
 
+/** Two "Léa" in one room would be unreadable on the scores: the second one becomes "Léa 2". */
+function uniqueName(s: RoomState, name: string): string {
+  if (!name) return '';
+  const taken = new Set(s.players.map((p) => p.name.toLowerCase()));
+  if (!taken.has(name.toLowerCase())) return name;
+  for (let n = 2; ; n++) {
+    const candidate = `${name.slice(0, 17)} ${n}`;
+    if (!taken.has(candidate.toLowerCase())) return candidate;
+  }
+}
+
 export class Room extends DurableObject {
   private state: RoomState | null | undefined; // undefined = not loaded yet
 
@@ -143,19 +154,20 @@ export class Room extends DurableObject {
         return;
       }
       case 'start': {
-        if (!me.host) return this.error(ws, 'not-host', 'Seul l’hôte peut lancer la partie.');
+        if (!this.leads(s, me)) return this.error(ws, 'not-host', 'Seul l’hôte peut lancer la partie.');
         if (s.phase !== 'lobby') return;
         if (s.players.length < 2) return this.error(ws, 'too-few', 'Il faut au moins 2 joueurs.');
         if (!s.players.every(ready)) return this.error(ws, 'not-ready', 'Tout le monde n’a pas encore choisi sa musique.');
         s.game = buildGame(s.players);
         s.phase = 'playing';
+        s.expiresAt = Date.now() + ROOM_TTL_MS; // a long evening: each game gets its two hours
         await this.openRound(s, 0);
         return;
       }
       case 'answer':
         return this.answer(s, me, msg);
       case 'next': {
-        if (!me.host) return this.error(ws, 'not-host', 'Seul l’hôte passe à la suite.');
+        if (!this.leads(s, me)) return this.error(ws, 'not-host', 'Seul l’hôte passe à la suite.');
         const g = s.game;
         if (s.phase !== 'playing' || !g || !g.rounds[g.index]?.results) return;
         if (g.index + 1 < g.rounds.length) return this.openRound(s, g.index + 1);
@@ -166,7 +178,7 @@ export class Room extends DurableObject {
         return;
       }
       case 'replay':
-        if (!me.host) return this.error(ws, 'not-host', 'Seul l’hôte peut relancer.');
+        if (!this.leads(s, me)) return this.error(ws, 'not-host', 'Seul l’hôte peut relancer.');
         if (s.phase === 'lobby') return;
         s.phase = 'lobby';
         s.game = null;
@@ -187,7 +199,7 @@ export class Room extends DurableObject {
     } else {
       if (s.phase !== 'lobby') return this.error(ws, 'started', 'La partie a déjà commencé.');
       if (s.players.length >= MAX_PLAYERS) return this.error(ws, 'full', `La salle est pleine (${MAX_PLAYERS} joueurs).`);
-      const name = clean(msg.name, 20);
+      const name = uniqueName(s, clean(msg.name, 20));
       if (!name) return this.error(ws, 'bad-message', 'Choisis un pseudo.');
       const host = !!msg.hostKey && msg.hostKey === s.hostKey && !s.players.some((p) => p.host);
       me = { id: shortId(), token: crypto.randomUUID(), name, avatar: safeUrl(msg.avatar), host, joinedAt: Date.now(), source: null, tracks: [] };
@@ -347,6 +359,11 @@ export class Room extends DurableObject {
   }
 
   /* ---------- helpers ---------- */
+
+  /** The host leads the game; while the host's phone is away, anyone may, so the room is never stuck. */
+  private leads(s: RoomState, p: Player) {
+    return p.host || !s.players.some((o) => o.host && this.socketsOf(o.id).length);
+  }
 
   private socketsOf(id: string, except?: WebSocket) {
     return this.ctx.getWebSockets().filter((w) => w !== except && (w.deserializeAttachment() as Attachment | null)?.id === id);

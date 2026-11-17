@@ -14,6 +14,8 @@ const check = (label, ok) => console.log(ok ? 'OK ' : 'ÉCHEC', label);
 
 const bad = await fetch(S + '/rooms', { method: 'POST', headers: { Origin: 'https://evil.example' } });
 check('site étranger refusé (403)', bad.status === 403);
+const blind = await fetch(S + '/rooms', { method: 'POST' });
+check('sans en-tête Origin refusé (403)', blind.status === 403);
 const { code, hostKey } = await fetch(S + '/rooms', { method: 'POST', headers: O }).then((r) => r.json());
 check(`salle créée : ${code}`, /^[A-HJ-NP-Z]{4}$/.test(code) && !!hostKey);
 check('code inconnu → 404', (await fetch(S + '/rooms/ZZZZ', { headers: O })).status === 404 || code === 'ZZZZ');
@@ -29,6 +31,7 @@ check('Matthias est hôte, seul', room.players.filter((p) => p.host).map((p) => 
 check('avatar dangereux vidé', room.players.find((p) => p.name === 'Léa').avatar === '');
 check('pseudo nettoyé', room.players.some((p) => p.name === 'Tom le boss'));
 check('aucun jeton dans le salon', !JSON.stringify(room).includes(lea.last('welcome').you.token));
+const expiresAt = room.expiresAt;
 
 lea.send({ t: 'start' }); await wait(200);
 check('Léa ne peut pas lancer', lea.last('error')?.code === 'not-host');
@@ -44,6 +47,9 @@ host.send({ t: 'kick', id: tom.last('welcome').you.id });
 check('Tom retiré (code 4001)', (await tom.closed) === 4001);
 await wait(200);
 check('plus que 2 joueurs', host.last('room').players.length === 2);
+const twin = phone(code, { name: 'léa' }); await wait(300);
+check('pseudo déjà pris : « léa 2 »', twin.last('welcome') && host.last('room').players.some((p) => p.name === 'léa 2'));
+host.send({ t: 'kick', id: twin.last('welcome').you.id }); await twin.closed; await wait(200);
 
 const extra = [];
 for (let i = 0; i < 7; i++) extra.push(phone(code, { name: 'X' + i }));
@@ -59,12 +65,19 @@ check('musique invalide refusée', host.last('error')?.code === 'bad-message');
 const me = host.last('room').players.find((p) => p.name === 'Matthias');
 check('15 titres gardés sur 20, source Deezer', me.tracks === 15 && me.source === 'deezer');
 check('les titres ne sont pas diffusés', !JSON.stringify(host.last('room')).includes('T14'));
-host.send({ t: 'start' }); await wait(300);
-check('partie lancée', lea2.last('room').phase === 'playing');
+lea2.send({ t: 'start' }); await wait(200);
+check('hôte en ligne : Léa ne lance pas', lea2.last('error')?.code === 'not-host' && lea2.last('room').phase === 'lobby');
+const hostToken = host.last('welcome').you.token;
+host.ws.close(); await host.closed; await wait(300);
+lea2.send({ t: 'start' }); await wait(300);
+check('hôte déconnecté : Léa peut lancer', lea2.last('room').phase === 'playing');
+check('la salle repart pour 2 h au lancement', lea2.last('room').expiresAt > expiresAt);
+const host2 = phone(code, { name: 'Matthias', token: hostToken }); await wait(300);
+check('l’hôte revient, toujours hôte', host2.last('welcome')?.you.host === true);
 const late = phone(code, { name: 'Retard' }); await wait(300);
 check('retardataire refusé', late.last('error')?.code === 'started');
 
-host.send({ t: 'leave' }); await host.closed; await wait(300);
+host2.send({ t: 'leave' }); await host2.closed; await wait(300);
 check('l’hôte part, Léa (la suivante) devient hôte', lea2.last('room').players.find((p) => p.id === leaId).host);
 const info = await fetch(S + '/rooms/' + code, { headers: O }).then((r) => r.json());
 check('résumé public sans secret', !JSON.stringify(info).includes(hostKey) && info.phase === 'playing');

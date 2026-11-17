@@ -12,5 +12,7 @@
     // Sites autorisés à ouvrir une salle (séparés par des virgules).
     "ALLOWED_ORIGINS": "https://matthiasgermain.github.io,http://127.0.0.1:8888,http://localhost:8888"
   },
+  // Au plus 10 salles créées par minute depuis une même adresse.
+  "ratelimits": [{ "name": "CREATE_LIMIT", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }],
   "observability": { "enabled": true }
 }

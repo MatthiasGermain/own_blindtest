@@ -1,168 +1,68 @@
-const API = 'https://api.spotify.com/v1';
-const REDIRECT_URI = location.origin + location.pathname.replace(/index\.html$/, '');
-const SCOPES = [
-  'user-library-read', 'streaming', 'user-read-email', 'user-read-private',
-  'user-modify-playback-state', 'user-read-playback-state',
-  'user-top-read', 'playlist-read-private', 'playlist-read-collaborative',
-].join(' ');
-
-const $ = (s) => document.querySelector(s);
-
-const store = {
-  get(k, d = null) {
-    try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; }
-  },
-  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* quota */ } },
-  del(k) { try { localStorage.removeItem(k); } catch { /* ignore */ } },
-};
-
+// The app: screens, music sources, the solo blindtest, sharing and challenges, the home screen.
+// Helpers are in util.js, the Spotify account and player in spotify.js.
 function show(id) {
   for (const s of document.querySelectorAll('main > section')) s.classList.toggle('hidden', s.id !== id);
+  syncBack();
 }
 
-function el(tag, props = {}, children = []) {
-  const n = Object.assign(document.createElement(tag), props);
-  for (const c of [].concat(children)) n.append(c);
-  return n;
-}
+const currentScreen = () => [...document.querySelectorAll('main > section')].find((s) => !s.classList.contains('hidden'))?.id;
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/* ---------- Phone back button ---------- */
 
-/* ---------- Auth (OAuth PKCE, sans backend) ---------- */
+// The screens are not pages: one history entry stands in front of the home screen while the player is
+// anywhere else, and "back" acts inside the game (leave the panel, the settings, the game) instead of
+// closing the site.
+let guarded = false;
+let skipPop = false;
+let syncing = false;
+const atRoot = () => currentScreen() === 'screen-login' && !$('#home-pick').classList.contains('hidden');
 
-function randomString(len) {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  return Array.from(crypto.getRandomValues(new Uint8Array(len)), (b) => chars[b % chars.length]).join('');
-}
-
-async function sha256Base64Url(str) {
-  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
-  return btoa(String.fromCharCode(...new Uint8Array(hash))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-async function login() {
-  // Already signed in (back from "Changer de source"): no new round trip to Spotify. Not from a room, which wants its lists.
-  if (store.get('token') && !store.get('salleSpotify')) {
-    store.set('source', 'liked');
-    $('#opt-source').value = 'liked';
-    enterSetup();
-    return;
-  }
-  const clientId = SPOTIFY_CLIENT_ID || $('#client-id').value.trim();
-  if (!clientId) { $('#login-error').textContent = 'Colle ton Client ID.'; return; }
-  store.set('clientId', clientId);
-  Stats.track('spotify-connexion');
-  const verifier = randomString(64);
-  const state = randomString(16);
-  store.set('pkce', { verifier, state });
-  const params = new URLSearchParams({
-    client_id: clientId,
-    response_type: 'code',
-    redirect_uri: REDIRECT_URI,
-    scope: SCOPES,
-    code_challenge_method: 'S256',
-    code_challenge: await sha256Base64Url(verifier),
-    state,
-  });
-  location.href = 'https://accounts.spotify.com/authorize?' + params;
-}
-
-async function tokenRequest(body) {
-  const res = await fetch('https://accounts.spotify.com/api/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ client_id: store.get('clientId'), ...body }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error_description || data.error || `Connexion Spotify refusée (${res.status})`);
-  store.set('token', {
-    access: data.access_token,
-    refresh: data.refresh_token || store.get('token')?.refresh,
-    expires: Date.now() + (data.expires_in - 60) * 1000,
-    scope: data.scope ?? store.get('token')?.scope ?? SCOPES,
-  });
-}
-
-async function handleCallback() {
-  const p = new URLSearchParams(location.search);
-  if (!p.has('code') && !p.has('error')) return;
-  history.replaceState(null, '', REDIRECT_URI);
-  if (p.has('error')) throw new Error('Connexion refusée : ' + p.get('error'));
-  const pkce = store.get('pkce');
-  store.del('pkce');
-  if (!pkce || p.get('state') !== pkce.state) throw new Error('Réponse de connexion invalide, réessaie.');
-  await tokenRequest({ grant_type: 'authorization_code', code: p.get('code'), redirect_uri: REDIRECT_URI, code_verifier: pkce.verifier });
-  // Just signed in to Spotify: play its songs, not the source used before (a Deezer profile, say).
-  // Not when the login came from a room: a phone can't play Spotify itself, the solo game keeps its source.
-  if (!store.get('salleSpotify')) {
-    store.set('source', 'liked');
-    $('#opt-source').value = 'liked';
-  }
-}
-
-let refreshing = null;
-async function getToken() {
-  const t = store.get('token');
-  if (!t) throw new Error('Non connecté');
-  if (Date.now() < t.expires) return t.access;
-  refreshing ??= tokenRequest({ grant_type: 'refresh_token', refresh_token: t.refresh }).finally(() => { refreshing = null; });
-  await refreshing;
-  return store.get('token').access;
-}
-
-// Spotify's "too many requests". Its Retry-After header is not readable from a web page (Spotify does not
-// expose it), so the length of the block is unknown: each new refusal doubles the gap before the next try
-// (30 s, 2 min, 10 min, 30 min, 1 h), and no call goes out meanwhile, since calls during a block prolong it.
-const PAUSES = [30, 120, 600, 1800, 3600];
-
-function spotifyPause() {
-  const until = store.get('spotifyPause', 0);
-  if (Date.now() >= until) return null;
-  const s = Math.ceil((until - Date.now()) / 1000);
-  const wait = s < 60 ? `${s} s` : s < 3600 ? `${Math.ceil(s / 60)} min` : `${Math.floor(s / 3600)} h ${String(Math.ceil((s % 3600) / 60)).padStart(2, '0')}`;
-  return Object.assign(new Error(`Spotify bloque les appels de l'app, pour une durée qu'il ne précise pas. Prochain essai possible dans ${wait}`), { rateLimited: true });
-}
-
-function spotifyRefused(retryAfter) {
-  const n = store.get('spotifyRefusals', 0);
-  Stats.track('spotify-bloque', { fois: String(n + 1) });
-  store.set('spotifyRefusals', n + 1);
-  store.set('spotifyPause', Date.now() + Math.max(retryAfter, PAUSES[Math.min(n, PAUSES.length - 1)]) * 1000);
-}
-
-async function api(path, opts = {}) {
-  const isGet = !opts.method || opts.method === 'GET';
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const paused = spotifyPause();
-    if (paused) throw paused;
-    const res = await fetch(path.startsWith('http') ? path : API + path, {
-      ...opts,
-      headers: { Authorization: 'Bearer ' + await getToken(), ...(opts.body ? { 'Content-Type': 'application/json' } : {}) },
-    });
-    if (res.status === 429) {
-      // Read when Spotify allows it (it may some day); otherwise one short retry, then the backoff.
-      const wait = Number(res.headers.get('Retry-After')) || 0;
-      if (attempt === 0 && wait <= 10) { await sleep((wait || 3) * 1000); continue; }
-      spotifyRefused(wait);
-      throw spotifyPause();
+// Checked once the current screen change is complete (goHome opens a panel, then shows the screen).
+function syncBack() {
+  if (syncing) return;
+  syncing = true;
+  queueMicrotask(() => {
+    syncing = false;
+    if (!guarded && !atRoot()) {
+      history.pushState({ blindtest: true }, '');
+      guarded = true;
+    } else if (guarded && atRoot()) {
+      guarded = false;
+      skipPop = true;
+      history.back();
     }
-    store.del('spotifyRefusals');
-    if (res.status >= 500 && isGet && attempt < 3) { await sleep(1000 * 2 ** attempt); continue; }
-    const txt = await res.text();
-    let data = null;
-    try { data = txt ? JSON.parse(txt) : null; } catch { /* some Spotify errors are plain text */ }
-    const plain = txt.trim().startsWith('<') ? '' : txt.slice(0, 200);
-    const fallback = res.status >= 500 ? `Spotify ne répond pas (${res.status})` : `Spotify ${res.status}`;
-    const msg = data?.error?.message || plain || fallback;
-    if (res.status === 403 && /regist/i.test(msg)) {
-      if ($('#screen-denied').classList.contains('hidden')) Stats.track('spotify-refuse');
-      show('screen-denied');
-      throw Object.assign(new Error("ton compte Spotify n'est pas autorisé sur cette app."), { notRegistered: true });
-    }
-    if (!res.ok) throw new Error(msg);
-    return data;
+  });
+}
+
+async function onBack() {
+  if (skipPop) { skipPop = false; return; }
+  guarded = false;
+  switch (currentScreen()) {
+    case 'screen-round': await quitGame(); break;
+    case 'screen-cover': await Covers.back(); break;
+    case 'screen-room': await Salle.back(); break;
+    case 'screen-end': backToSetup(); break;
+    case 'screen-setup': case 'screen-denied': goHome(); break;
+    case 'screen-login': openPanel(null); break;
+    default: break;
   }
-  throw new Error('Trop de requêtes, réessaie dans un moment.');
+  syncBack();
+}
+
+/* ---------- In-app confirmation ---------- */
+
+// A yes/no question in the game's own style (the browser's confirm() looks like a system alert).
+let askDone = null;
+function ask(text, yes = 'Oui') {
+  const d = $('#ask');
+  askDone?.(false);
+  $('#ask-text').textContent = text;
+  $('#ask-yes').textContent = yes;
+  return new Promise((resolve) => {
+    askDone = (v) => { askDone = null; if (d.open) d.close(); resolve(v); };
+    if (!d.open) d.showModal();
+    $('#ask-no').focus();
+  });
 }
 
 // The Deezer profile is only a public link: forgetting it is all a "log out" needs.
@@ -174,14 +74,6 @@ function forgetDeezer() {
   $('#deezer-profile').value = '';
   if (store.get('token') || store.get('history')) enterSetup();
   else goHome();
-}
-
-function logout() {
-  store.del('token');
-  store.del('liked');
-  store.del('myName');
-  player?.disconnect();
-  location.replace(REDIRECT_URI);
 }
 
 /* ---------- Sources de titres ---------- */
@@ -199,34 +91,6 @@ const ADDED_NAMES = {
 
 // The imported history and Deezer profiles play Deezer previews; the rest needs the Spotify player.
 const onDeezer = (kind) => kind === 'history' || kind.startsWith('dz');
-
-function toTrack(t, addedAt) {
-  if (!t || t.is_local || !t.uri || (t.type && t.type !== 'track')) return null;
-  return {
-    uri: t.uri,
-    name: t.name,
-    artists: t.artists.map((a) => a.name),
-    album: t.album.name,
-    releaseYear: parseInt(t.album.release_date, 10) || null,
-    addedYear: addedAt ? new Date(addedAt).getFullYear() : null,
-    cover: t.album.images?.[0]?.url || '',
-    duration: t.duration_ms,
-  };
-}
-
-async function fetchAll(url, pick, onProgress) {
-  const out = [];
-  while (url) {
-    const data = await api(url);
-    for (const it of data.items) {
-      const x = it && pick(it);
-      if (x) out.push(x);
-    }
-    onProgress?.(out.length, data.total);
-    url = data.next;
-  }
-  return out;
-}
 
 // Since Feb 2026, Spotify only returns the contents of playlists the user owns or collaborates on.
 async function loadPlaylists() {
@@ -249,6 +113,10 @@ function updateSourceFields(source) {
     chip.classList.toggle('hidden', !chip.dataset.sources.split(' ').includes(kind));
   }
   $('#field-added-name').textContent = (ADDED_NAMES[kind] || ["Année d'ajout"])[0];
+  // A Deezer preview lasts 30 s: « Tout le morceau » would be the same as 30 s.
+  const whole = $('#opt-snippet option[value="0"]');
+  whole.hidden = whole.disabled = onDeezer(kind);
+  if (whole.disabled && $('#opt-snippet').value === '0') $('#opt-snippet').value = '30';
 }
 
 // The most played tracks make the game: they are the ones you should recognise.
@@ -394,7 +262,7 @@ async function loadSource(force = false) {
 
 /* ---------- Champs à deviner ---------- */
 
-const ALL_FIELDS = ['artist', 'title', 'album', 'year', 'added', 'discovered'];
+const DEFAULT_FIELDS = ['artist', 'title'];
 const LABELS = { artist: 'Artiste', title: 'Titre', album: 'Album', year: 'Sortie', added: 'Ajouté en', discovered: 'Découvert en' };
 
 /* ---------- Réponses à choisir ---------- */
@@ -423,9 +291,13 @@ function buildOptions(field, t) {
   // so the right answer is not simply the only one with a comma.
   const several = (x, i) => (x.artists.length > 1 ? x.artists.join(', ')
     : (i % 2 ? [t.artists[0], x.artists[0], ...t.artists.slice(2)] : [x.artists[0], ...t.artists.slice(1)]).join(', '));
+  const elsewhere = shuffle(others).map((x) => answerText(field, x));
+  // When the artist is asked too, four titles (or albums) of one artist would give it away: the wrong ones
+  // then come from other artists, the artist's own only when there are too few of them.
+  const artistAsked = game.fields.includes('artist');
   const pool = field === 'artist'
     ? shuffle(others).map((x, i) => (t.artists.length > 1 ? several(x, i) : x.artists[0]))
-    : [...sameArtist, ...discography, ...shuffle(others).map((x) => answerText(field, x))];
+    : artistAsked ? [...elsewhere, ...sameArtist, ...discography] : [...sameArtist, ...discography, ...elsewhere];
   const seen = new Set([Scoring.norm(right)]);
   const wrong = [];
   for (const c of pool) {
@@ -524,10 +396,6 @@ function selectedFields() {
 
 /* ---------- Import de l'historique (Spotify ou YouTube Music) ---------- */
 
-function loadScript(src) {
-  return new Promise((ok, fail) => document.head.append(el('script', { src, onload: ok, onerror: () => fail(new Error('chargement impossible')) })));
-}
-
 async function importHistory(files) {
   const status = $('#history-status');
   status.classList.remove('error');
@@ -562,37 +430,6 @@ async function importHistory(files) {
     status.textContent = `Import impossible : ${e.message}.`;
     status.classList.add('error');
   }
-}
-
-/* ---------- Lecteur (Web Playback SDK, Premium requis) ---------- */
-
-let player = null;
-let deviceId = null;
-let isPaused = true;
-
-function initPlayer() {
-  return new Promise((resolve, reject) => {
-    window.onSpotifyWebPlaybackSDKReady = () => {
-      player = new Spotify.Player({ name: 'Blindtest', getOAuthToken: (cb) => getToken().then(cb), volume: store.get('volume', 70) / 100 });
-      player.addListener('ready', ({ device_id }) => {
-        deviceId = device_id;
-        // Making the browser the active device up front avoids a slow first play.
-        api('/me/player', { method: 'PUT', body: JSON.stringify({ device_ids: [deviceId], play: false }) })
-          .catch(() => {})
-          .finally(resolve);
-      });
-      player.addListener('not_ready', () => { deviceId = null; });
-      player.addListener('initialization_error', ({ message }) => reject(new Error('Navigateur non compatible : ' + message)));
-      player.addListener('authentication_error', ({ message }) => reject(new Error('Authentification : ' + message)));
-      player.addListener('account_error', () => reject(new Error('La lecture nécessite un compte Spotify Premium.')));
-      player.addListener('player_state_changed', (s) => {
-        const cur = s?.track_window?.current_track;
-        onPlayback(!s || s.paused, [cur?.uri, cur?.linked_from?.uri]);
-      });
-      player.connect();
-    };
-    document.body.append(el('script', { src: 'https://sdk.scdn.co/spotify-player.js' }));
-  });
 }
 
 let snippetTimer = null;
@@ -665,6 +502,7 @@ async function playFrom(uri, positionMs, snippetMs) {
       });
     }
   } catch (e) {
+    if (e.replaced) throw e; // a newer play took over: its state must stay
     pending = null;
     clearTimeout(stallTimer);
     $('#round-loading').classList.add('hidden');
@@ -690,15 +528,6 @@ function updateStartButton() {
   $('#btn-challenge').disabled = !!store.get('token') && !deviceId && !$('#player-status').classList.contains('error');
   // « Pochette surprise » needs only the songs: no player.
   $('#btn-covers').disabled = !tracks.length;
-}
-
-function shuffle(arr) {
-  const a = arr.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
 }
 
 const TOP_NAMES = { short_term: 'Top 4 semaines', medium_term: 'Top 6 mois', long_term: 'Top de toujours' };
@@ -821,9 +650,9 @@ async function replay() {
     if (!found) { skip(); return; }
     // The album of a history track is only known once Deezer has found it.
     if (choiceMode() && $('#result').classList.contains('hidden')) renderChoices(t);
-    if (choiceMode() && game.fields.includes('album') && !t.discography) {
-      Deezer.albums(t).then((list) => {
-        t.discography = list;
+    if (choiceMode() && game.fields.includes('album') && !game.fields.includes('artist') && !t.discography) {
+      Deezer.album.ofArtist(t.artists[0], t.artistId).catch(() => []).then((list) => {
+        t.discography = list.map((a) => a.title);
         if (currentTrack() === t && $('#result').classList.contains('hidden')) renderChoices(t);
       });
     }
@@ -833,6 +662,7 @@ async function replay() {
   try {
     await playFrom(t.uri, t.startMs, snippet());
   } catch (e) {
+    if (e.replaced) return;
     if (game.engine !== 'deezer' || currentTrack() !== t || !(await Deezer.refresh(t)) || currentTrack() !== t) { unplayable(e.message); return; }
     try { await playFrom(t.uri, t.startMs, snippet()); } catch (e2) { unplayable(e2.message); }
   }
@@ -914,8 +744,8 @@ function next() {
 }
 
 // Back to the settings mid-game: the sound stops, nothing is scored.
-function quitGame() {
-  if (!confirm('Abandonner la partie en cours ?')) return;
+async function quitGame() {
+  if (!(await ask('Abandonner la partie en cours ?', 'Abandonner'))) return;
   Stats.track('partie-abandonnee', { ...gameFacts(), titre: String(game.index + 1) });
   clearTimeout(snippetTimer);
   clearTimeout(stallTimer);
@@ -950,9 +780,7 @@ function endGame() {
   $('#end-grid-them').classList.toggle('hidden', !c);
   $('#end-grid').replaceChildren(...(c ? [el('small', { textContent: 'Toi' })] : []), Challenge.squares(grid));
   if (c) {
-    $('#end-verdict').textContent = mine > c.score ? `Tu bats ${c.name} : ${mine} contre ${c.score}.`
-      : mine < c.score ? `${c.name} gagne : ${c.score} contre ${mine}.`
-      : `Égalité avec ${c.name} : ${mine} partout.`;
+    $('#end-verdict').textContent = verdictText(mine, c.score, c.name);
     $('#end-grid-them').replaceChildren(el('small', { textContent: c.name }), Challenge.squares(c.grid));
   }
 
@@ -961,6 +789,8 @@ function endGame() {
     el('span', { textContent: `${r.track.artists[0]} — ${r.track.name}` }),
     el('strong', { textContent: `${r.total}` }),
   ])));
+  // A challenge is replayed from its link, not from this player's settings.
+  $('#btn-again').classList.toggle('hidden', !!c || !tracks.length);
   show('screen-end');
   Stats.track('partie-finie', { ...gameFacts(), titres: String(game.results.length), score: Stats.bucket(total, max) });
   prepareShare(mine, max, grid);
@@ -972,7 +802,7 @@ let pendingChallenge = null;
 
 async function myName() {
   // A Deezer game is signed with the profile (or room) name: no Spotify call.
-  if (game.engine === 'deezer' || !store.get('token')) return store.get('deezerUser')?.name || store.get('pseudo') || 'Un pote';
+  if (game.engine === 'deezer' || !store.get('token')) return playerName();
   const cached = store.get('myName');
   if (cached) return cached;
   let name = 'Un pote';
@@ -1032,17 +862,9 @@ async function prepareShare(score, max, grid) {
 
 async function shareGame() {
   Stats.track('partage', { ...gameFacts(), lien: 'oui' });
-  const feedback = $('#share-feedback');
-  if (navigator.share && matchMedia('(pointer: coarse)').matches) {
-    try { await navigator.share({ text: game.shareText }); return; } catch (e) { if (e.name === 'AbortError') return; }
-  }
-  try {
-    await navigator.clipboard.writeText(game.shareText);
-    feedback.textContent = 'Copié ! Colle-le dans ton groupe.';
-  } catch {
-    $('#share-link').select();
-    feedback.textContent = 'Copie le lien ci-dessus.';
-  }
+  const done = await shareOrCopy({ text: game.shareText }, game.shareText);
+  if (done === 'copied') $('#share-feedback').textContent = 'Copié ! Colle-le dans ton groupe.';
+  if (done === 'failed') { $('#share-link').select(); $('#share-feedback').textContent = 'Copie le lien ci-dessus.'; }
 }
 
 function showChallenge() {
@@ -1100,6 +922,7 @@ function openPanel(name) {
   $('#home-pick').classList.toggle('hidden', !!name);
   for (const p of document.querySelectorAll('#screen-login [data-panel]')) p.classList.toggle('hidden', p.dataset.panel !== name);
   window.scrollTo(0, 0);
+  syncBack();
 }
 
 function goHome(panel = null) {
@@ -1125,12 +948,8 @@ function enterSetup() {
   if (!$('#opt-source').value || $('#opt-source').selectedOptions[0].disabled) {
     $('#opt-source').value = options.find((o) => !o.disabled)?.value || 'liked';
   }
-  if (dzUser) {
-    const who = dzUser.name;
-    options.find((o) => o.value === 'dztop').textContent = `Deezer : le top de ${who}`;
-    options.find((o) => o.value === 'dzliked').textContent = `Deezer : les coups de cœur de ${who}`;
-    options.find((o) => o.value === 'dzplaylist').textContent = `Deezer : une playlist de ${who}`;
-  }
+  // Short labels in the list (a phone cuts long ones): whose profile it is goes on the link that forgets it.
+  if (dzUser) $('#btn-forget-dz').textContent = `Oublier le profil ${dzUser.name}`;
   $('#btn-logout').classList.toggle('hidden', !loggedIn);
   $('#btn-forget-dz').classList.toggle('hidden', !dzUser);
   $('#btn-reload').classList.toggle('hidden', !loggedIn && !dzUser);
@@ -1163,6 +982,10 @@ async function main() {
   $('#btn-home').onclick = () => goHome();
   for (const id of ['#btn-setup-back', '#btn-denied-back', '#btn-end-home']) $(id).onclick = () => goHome();
   $('#btn-quit').onclick = quitGame;
+  $('#ask-yes').onclick = () => askDone?.(true);
+  $('#ask-no').onclick = () => askDone?.(false);
+  $('#ask').addEventListener('cancel', (e) => { e.preventDefault(); askDone?.(false); });
+  window.addEventListener('popstate', onBack);
   // Does the game bring visitors to the portfolio?
   for (const a of document.querySelectorAll('[data-credit]')) a.addEventListener('click', () => Stats.track('lien-auteur', { lien: a.dataset.credit }));
   for (const tile of document.querySelectorAll('[data-open]')) {
@@ -1175,9 +998,14 @@ async function main() {
   $('#opt-source').value = store.get('source', 'liked');
   $('#opt-source').onchange = () => loadSource();
   $('#opt-playlist').onchange = () => loadSource();
-  const savedFields = store.get('fields', ALL_FIELDS);
-  if (!store.get('fieldsHistory')) {
-    savedFields.push('discovered');
+  // A first game asks the artist and the title: five questions per song is a lot to start with.
+  let savedFields = store.get('fields');
+  if (!savedFields) {
+    savedFields = [...DEFAULT_FIELDS];
+    store.set('fieldsHistory', true);
+  } else if (!store.get('fieldsHistory')) {
+    // Saved before "Année de découverte" existed: it is added once.
+    savedFields = [...savedFields, 'discovered'];
     store.set('fields', savedFields);
     store.set('fieldsHistory', true);
   }
@@ -1194,7 +1022,8 @@ async function main() {
   $('#btn-pause').onclick = () => activePlayer().togglePlay();
   $('#btn-skip').onclick = skip;
   $('#btn-next').onclick = next;
-  $('#btn-again').onclick = backToSetup;
+  $('#btn-again').onclick = startGame;
+  $('#btn-settings').onclick = backToSetup;
   Deezer.player.setVolume(store.get('volume', 70) / 100);
   $('#btn-share').onclick = shareGame;
   $('#btn-challenge').onclick = startChallenge;
@@ -1208,6 +1037,14 @@ async function main() {
   $('#opt-mode').value = store.get('mode', 'classic');
   if (!$('#opt-mode').value) $('#opt-mode').value = 'classic';
   $('#opt-mode').onchange = updateModeHint;
+  // Blindtest or Pochette surprise: the same music, each game its own options.
+  const pickGame = (g) => { $('#screen-setup').dataset.game = g; store.set('game', g); };
+  const savedGame = store.get('game') === 'covers' ? 'covers' : 'blindtest';
+  for (const r of document.querySelectorAll('input[name="game"]')) {
+    r.checked = r.value === savedGame;
+    r.onchange = () => pickGame(r.value);
+  }
+  pickGame(savedGame);
   updateModeHint();
   captureChallenge();
   $('#guess-form').onsubmit = submitGuess;

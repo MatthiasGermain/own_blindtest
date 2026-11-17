@@ -51,19 +51,6 @@ const Deezer = (() => {
     return track.resolving;
   }
 
-  // The artist's discography, albums first: the hardest wrong answers for "which album?".
-  const discographies = new Map();
-  function albums(track) {
-    const id = track?.artistId;
-    if (!id) return Promise.resolve([]);
-    if (!discographies.has(id)) {
-      discographies.set(id, jsonp(`https://api.deezer.com/artist/${id}/albums?limit=50`)
-        .then((res) => (res?.data || []).sort((a, b) => (b.record_type === 'album') - (a.record_type === 'album')).map((a) => a.title).filter(Boolean))
-        .catch(() => { discographies.delete(id); return []; }));
-    }
-    return discographies.get(id);
-  }
-
   // Preview links are signed and expire: fetch a fresh one when a stored link stops loading.
   async function refresh(track) {
     if (track.uri.startsWith('dz:')) {
@@ -153,6 +140,7 @@ const Deezer = (() => {
   audio.addEventListener('playing', () => listener(false));
   audio.addEventListener('pause', () => listener(true));
   audio.addEventListener('ended', () => listener(true));
+  let loading = null; // ends the load in progress
   const SILENCE = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';
 
   const player = {
@@ -164,11 +152,24 @@ const Deezer = (() => {
       audio.play().catch(() => {});
     },
     // Loads the snippet and goes to startSec, without playing yet: start() plays it.
+    // A newer load replaces this one (its error says `replaced`); a snippet silent for 10 s is given up.
     async load(src, startSec) {
+      loading?.(Object.assign(new Error('remplacé'), { replaced: true }));
       audio.src = src;
       await new Promise((ok, fail) => {
-        audio.addEventListener('loadedmetadata', ok, { once: true });
-        audio.addEventListener('error', () => fail(new Error("l'extrait ne se charge pas")), { once: true });
+        const done = (err) => {
+          clearTimeout(timer);
+          audio.removeEventListener('loadedmetadata', onMeta);
+          audio.removeEventListener('error', onError);
+          if (loading === done) loading = null;
+          if (err) fail(err); else ok();
+        };
+        const onMeta = () => done();
+        const onError = () => done(new Error("l'extrait ne se charge pas"));
+        const timer = setTimeout(() => done(new Error("l'extrait met trop de temps à charger")), 10000);
+        audio.addEventListener('loadedmetadata', onMeta);
+        audio.addEventListener('error', onError);
+        loading = done;
       });
       audio.currentTime = Math.min(startSec, Math.max(0, audio.duration - 5));
     },
@@ -183,7 +184,7 @@ const Deezer = (() => {
     setVolume(v) { audio.volume = v; },
   };
 
-  /* ---------- Albums, for « Pochette surprise » ---------- */
+  /* ---------- Albums: « Pochette surprise », and wrong answers to « which album? » ---------- */
 
   const albumCatalog = {
     // Albums by name, for the answer suggestions. No cover: it would give the answer away.
@@ -202,22 +203,29 @@ const Deezer = (() => {
       return null;
     },
     get: (id) => call(`/album/${id}`),
-    // Every album of an artist (albums first, the best known first, then EPs and singles).
+    // Every album of an artist (albums first, the best known first, then EPs and singles), fetched once.
     // By Deezer id when known: a search by name often finds a namesake instead.
-    async ofArtist(name, id = null) {
-      if (!id) {
-        const wanted = Scoring.norm(name);
-        const res = await call(`/search/artist?q=${encodeURIComponent(name)}&limit=10`);
-        const same = (res.data || []).filter((a) => Scoring.norm(a.name) === wanted).sort((a, b) => (b.nb_fan || 0) - (a.nb_fan || 0));
-        id = (same[0] || res.data?.[0])?.id;
-        if (!id) return [];
-      }
-      const list = await all(`/artist/${id}/albums`, 200);
-      const rank = { album: 0, ep: 1, compile: 2, single: 3 };
-      return list.sort((a, b) => (rank[a.record_type] ?? 2) - (rank[b.record_type] ?? 2) || (b.fans || 0) - (a.fans || 0))
-        .map((a) => ({ id: String(a.id), title: a.title, artist: name }));
+    ofArtist(name, id = null) {
+      const key = id ? `id:${id}` : `name:${Scoring.norm(name)}`;
+      if (!discographies.has(key)) discographies.set(key, discography(name, id).catch((e) => { discographies.delete(key); throw e; }));
+      return discographies.get(key);
     },
   };
 
-  return { resolve, refresh, albums, player, profile, album: albumCatalog };
+  const discographies = new Map();
+  async function discography(name, id) {
+    if (!id) {
+      const wanted = Scoring.norm(name);
+      const res = await call(`/search/artist?q=${encodeURIComponent(name)}&limit=10`);
+      const same = (res.data || []).filter((a) => Scoring.norm(a.name) === wanted).sort((a, b) => (b.nb_fan || 0) - (a.nb_fan || 0));
+      id = (same[0] || res.data?.[0])?.id;
+      if (!id) return [];
+    }
+    const list = await all(`/artist/${id}/albums`, 200);
+    const rank = { album: 0, ep: 1, compile: 2, single: 3 };
+    return list.sort((a, b) => (rank[a.record_type] ?? 2) - (rank[b.record_type] ?? 2) || (b.fans || 0) - (a.fans || 0))
+      .map((a) => ({ id: String(a.id), title: a.title, artist: name }));
+  }
+
+  return { resolve, refresh, player, profile, album: albumCatalog };
 })();

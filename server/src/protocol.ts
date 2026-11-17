@@ -1,7 +1,7 @@
 // Messages exchanged over a room's WebSocket, as JSON. Shared vocabulary between the server and the site.
 
 export const MAX_PLAYERS = 8;
-export const ROOM_TTL_MS = 2 * 60 * 60 * 1000; // a room and its data are erased after 2 hours at most
+export const ROOM_TTL_MS = 2 * 60 * 60 * 1000; // a room and its data are erased 2 hours after it opened or after its last game started
 export const MAX_MESSAGE_BYTES = 32 * 1024;
 export const TRACKS_PER_PLAYER = 15; // each player brings this many tracks to the shared pot
 export const MIN_TRACKS = 5; // below this, a player cannot be ready

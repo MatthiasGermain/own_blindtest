@@ -1,13 +1,15 @@
 // « Pochette surprise » : find the album from its cover, pixelated at first, sharper after each try.
-// The albums come from the songs loaded on the setup screen (app.js `tracks`); the details (year,
-// genre, number of songs) from Deezer. It uses app.js helpers ($, el, show, shuffle, store, backToSetup).
+// The albums come from the songs loaded on the setup screen (app.js `tracks`), or from a challenge link
+// (#p=…: the same five covers as a friend); the details (year, genre, number of songs) from Deezer.
+// It uses the helpers of util.js ($, el, shuffle, store, shareOrCopy, playerName) and app.js (show, ask, backToSetup, goHome).
 const Covers = (() => {
   const ROUNDS = 5;
   const TRIES = 6;
   const BLOCKS = [6, 10, 16, 26, 44]; // pixels across the cover, try after try; then the real cover
   const SNIPPET_MS = 5000;
 
-  let game = null; // { rounds: [], index, results: [] }
+  let game = null; // { rounds: [], index, results: [], library, challenge }
+  let dare = null; // a challenge link opened on this visit, until it is played or dismissed
   let round = null; // { album, tries: [], done, found }
   let image = null; // the current cover, loaded
   let suggestTimer = null;
@@ -88,16 +90,94 @@ const Covers = (() => {
       }
       if (rounds.length < 3) { say('Pas assez de pochettes retrouvées. Choisis une autre source.', true); return; }
       say('');
-      game = { rounds, index: 0, results: [], library: list };
-      store.set('coversSeen', [...rounds.map((r) => r.key), ...(store.get('coversSeen') || [])].slice(0, 60));
       Stats.track('pochette-lancee', { source: ($('#opt-source').value || '').split(':')[0] });
-      $('#cv-end').classList.add('hidden');
-      $('#cv-game').classList.remove('hidden');
-      show('screen-cover');
-      window.scrollTo(0, 0);
-      openRound();
+      begin(rounds, list, null);
     } catch (e) {
       say(`Deezer ne répond pas (${e.message}).`, true);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function begin(rounds, library, challenge) {
+    game = { rounds, index: 0, results: [], library, challenge };
+    store.set('coversSeen', [...rounds.map((r) => r.key), ...(store.get('coversSeen') || [])].slice(0, 60));
+    $('#cv-end').classList.add('hidden');
+    $('#cv-game').classList.remove('hidden');
+    show('screen-cover');
+    window.scrollTo(0, 0);
+    openRound();
+  }
+
+  /* ---------- Challenges: the same covers for a friend ---------- */
+
+  const VERDICTS = ['right', 'artist', 'wrong', 'skip'];
+  const b64 = (s) => btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const unb64 = (s) => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0)));
+
+  // The link: name, score and grid of the player, and the Deezer ids of the albums (those Deezer knows).
+  function dareLink() {
+    const ids = game.rounds.map((r) => r.dzId).filter(Boolean);
+    if (ids.length < 3) return null;
+    const grid = game.results.filter((r) => r.album.dzId).map((r) => r.tries.map((t) => VERDICTS.indexOf(t.verdict)).join(''));
+    const code = b64(JSON.stringify({ v: 1, n: playerName(), s: points(), a: ids, g: grid }));
+    return `${location.origin}${location.pathname}#p=${code}`;
+  }
+
+  // Links come from anyone: every value is checked and bounded.
+  function readDare(code) {
+    const raw = JSON.parse(unb64(code));
+    if (raw?.v !== 1 || !Array.isArray(raw.a)) throw new Error('lien invalide');
+    const ids = raw.a.map(String).filter((id) => /^\d{1,12}$/.test(id)).slice(0, ROUNDS);
+    if (ids.length < 3) throw new Error('lien invalide');
+    const grid = (Array.isArray(raw.g) ? raw.g : []).slice(0, ROUNDS).map((l) => String(l).replace(/[^0-3]/g, '').slice(0, TRIES));
+    const score = Math.max(0, Math.min(ids.length * TRIES, Math.round(Number(raw.s)) || 0));
+    return { name: String(raw.n || '').slice(0, 40) || 'Un pote', score, ids, grid };
+  }
+
+  const gridText = (lines) => lines.map((l) => [...l].map((d) => MARK[VERDICTS[d]] || '').join('')).join('\n');
+
+  // Called at start-up: a #p= link shows its challenge on the home and settings screens.
+  function capture() {
+    const code = location.hash.match(/^#p=([A-Za-z0-9_-]+)$/)?.[1];
+    if (!code) return;
+    history.replaceState(null, '', location.pathname + location.search);
+    try { dare = readDare(code); } catch { return; }
+    Stats.track('pochette-defi-ouvert');
+    for (const box of document.querySelectorAll('.cv-dare')) {
+      box.querySelector('.challenge-title').textContent = `${dare.name} te défie à Pochette surprise !`;
+      box.querySelector('.status').textContent = `${dare.ids.length} pochettes · score à battre : ${dare.score} / ${dare.ids.length * TRIES}. Pas besoin de compte.`;
+      box.classList.remove('hidden');
+    }
+  }
+
+  function dropDare() {
+    dare = null;
+    for (const box of document.querySelectorAll('.cv-dare')) box.classList.add('hidden');
+  }
+
+  async function startDare(button) {
+    const d = dare;
+    if (!d) return;
+    const out = button.closest('.cv-dare').querySelector('.cv-dare-status');
+    button.disabled = true;
+    out.textContent = 'Préparation des pochettes…';
+    try {
+      const rounds = [];
+      for (const id of d.ids) {
+        const a = await Deezer.album.get(id).catch(() => null);
+        const cover = a?.cover_xl || a?.cover_big;
+        if (!cover) continue;
+        const first = (a.tracks?.data || []).find((t) => t.preview);
+        const e = { title: a.title, artist: a.artist?.name || '', albumId: a.id, tracks: first ? [{ uri: `dz:${first.id}`, preview: first.preview, name: first.title }] : [] };
+        rounds.push({ ...e, key: keyOf(e), dzId: String(a.id), artistId: a.artist?.id || null, cover, year: parseInt(a.release_date, 10) || null, genre: a.genres?.data?.[0]?.name || '', size: a.nb_tracks || null });
+      }
+      if (rounds.length < 3) throw new Error('Deezer ne retrouve plus ces albums.');
+      out.textContent = '';
+      dropDare();
+      begin(rounds, [], d);
+    } catch (e) {
+      out.textContent = e.message;
     } finally {
       button.disabled = false;
     }
@@ -200,7 +280,8 @@ const Covers = (() => {
     if (round.artist) { $('#cv-guess').value = round.artist; suggest(); }
   }
 
-  const MARK = { right: '🟩', artist: '🟨', wrong: '🟥', skip: '⬛' };
+  // The site's squares, as in the blindtest grid: found, half (the right artist), missed.
+  const MARK = { right: '🟧', artist: '🟫', wrong: '⬛', skip: '⬛' };
 
   function paintTries() {
     $('#cv-tries').replaceChildren(...round.tries.map((t, i) => el('li', { className: t.verdict, style: `--i: ${i}` }, [
@@ -266,13 +347,13 @@ const Covers = (() => {
     const t = round.album.tracks[0];
     $('#cv-sound').textContent = 'Chargement de l’extrait…';
     try {
-      if (!(t.uri?.startsWith('dz:') ? await Deezer.refresh(t) : await Deezer.resolve(t))) throw new Error('Pas d’extrait pour cet album.');
+      if (!t || !(t.uri?.startsWith('dz:') ? await Deezer.refresh(t) : await Deezer.resolve(t))) throw new Error('Pas d’extrait pour cet album.');
       await Deezer.player.play(t.preview, 8);
       $('#cv-sound').textContent = '';
       clearTimeout(snippetTimer);
       snippetTimer = setTimeout(() => Deezer.player.pause(), SNIPPET_MS);
     } catch (e) {
-      $('#cv-sound').textContent = e.message;
+      if (!e.replaced) $('#cv-sound').textContent = e.message;
     }
   }
 
@@ -309,38 +390,56 @@ const Covers = (() => {
     $('#cv-game').classList.add('hidden');
     $('#cv-end').classList.remove('hidden');
     $('#cv-end-score').textContent = `${points()} / ${max}`;
-    $('#cv-end-grid').textContent = game.results.map(line).join('\n');
+    $('#cv-end-grid').replaceChildren(game.results.map(line).join('\n'));
     $('#cv-end-recap').replaceChildren(...game.results.map((r, i) => el('li', { style: `--i: ${i}` }, [
       el('img', { src: r.album.cover, alt: '', loading: 'lazy' }),
       el('span', { textContent: `${r.album.artist} — ${r.album.title}` }),
       el('strong', { textContent: String(pointsOf(r)) }),
     ])));
     $('#cv-share-feedback').textContent = '';
+    // Against a friend's link: who wins, and both grids.
+    const c = game.challenge;
+    $('#cv-end-verdict').classList.toggle('hidden', !c);
+    $('#cv-end-grid-them').classList.toggle('hidden', !c);
+    if (c) {
+      const mine = points();
+      $('#cv-end-verdict').textContent = verdictText(mine, c.score, c.name);
+      $('#cv-end-grid-them').replaceChildren(el('small', { textContent: c.name }), gridText(c.grid));
+      $('#cv-end-grid').prepend(el('small', { textContent: 'Toi' }));
+    }
+    // « Rejouer » draws from the loaded songs: none after a challenge opened without a source.
+    $('#cv-again').classList.toggle('hidden', typeof tracks === 'undefined' || !tracks.length);
     window.scrollTo(0, 0);
-    Stats.track('pochette-finie', { score: Stats.bucket(points(), max) });
+    Stats.track('pochette-finie', { score: Stats.bucket(points(), max), defi: c ? 'oui' : 'non' });
   }
 
+  // The grid and a link to the same covers: the friend who opens it plays them and sees the score to beat.
   async function share() {
-    const text = `Pochette surprise · ${points()} / ${game.rounds.length * TRIES}\n${game.results.map(line).join('\n')}`;
-    const url = location.origin + location.pathname;
+    const url = dareLink() || location.origin + location.pathname;
+    const text = `Pochette surprise · ${points()} / ${game.rounds.length * TRIES}\n${game.results.map(line).join('\n')}\nÀ toi de battre ça : ${url}`;
     Stats.track('pochette-partage');
-    if (navigator.share) {
-      try { await navigator.share({ title: 'Pochette surprise', text, url }); return; } catch { /* closed: copy instead */ }
-    }
-    try {
-      await navigator.clipboard.writeText(`${text}\n${url}`);
-      $('#cv-share-feedback').textContent = 'Copié : colle-le où tu veux.';
-    } catch {
-      $('#cv-share-feedback').textContent = text;
-    }
+    const done = await shareOrCopy({ text }, text);
+    if (done === 'copied') $('#cv-share-feedback').textContent = 'Copié ! Colle-le dans ton groupe.';
+    if (done === 'failed') $('#cv-share-feedback').textContent = text;
   }
 
-  function quit() {
+  // The back button: during a game it asks first, like « Quitter la partie ».
+  async function back() {
+    if (game && !$('#cv-game').classList.contains('hidden')) return confirmQuit();
+    quit();
+  }
+
+  async function confirmQuit() {
+    if (await ask('Abandonner la partie en cours ?', 'Abandonner')) quit();
+  }
+
+  // to: where the player goes (the settings by default, home from the end screen's « ← Accueil »).
+  function quit(to = backToSetup) {
     clearTimeout(snippetTimer);
     Deezer.player.pause();
     game = null;
     round = null;
-    backToSetup();
+    to();
   }
 
   function wire() {
@@ -351,10 +450,16 @@ const Covers = (() => {
     $('#cv-listen').onclick = listen;
     $('#cv-next').onclick = next;
     $('#cv-again').onclick = () => start('end');
+    $('#cv-settings').onclick = () => quit();
     $('#cv-share').onclick = share;
-    $('#cv-quit').onclick = quit;
-    $('#cv-end-back').onclick = quit;
+    $('#cv-quit').onclick = confirmQuit;
+    $('#cv-end-back').onclick = () => quit(() => goHome());
+    for (const box of document.querySelectorAll('.cv-dare')) {
+      box.querySelector('.cv-dare-go').onclick = (e) => startDare(e.currentTarget);
+      box.querySelector('.cv-dare-skip').onclick = dropDare;
+    }
+    capture();
   }
 
-  return { wire, start };
+  return { wire, start, back };
 })();

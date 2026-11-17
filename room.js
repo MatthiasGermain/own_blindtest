@@ -2,7 +2,8 @@
 // This file handles the lobby (create or join a room, bring one's music, see the others arrive) and the
 // game as each phone sees it: the question, the reveal, the podium. Each phone plays the sound, or only the
 // host's when everyone is in the same room.
-// It uses app.js helpers ($, el, store, show, openPanel, goHome, shuffle, historyTracks).
+// It uses the helpers of util.js ($, el, store, shuffle, shareOrCopy) and app.js (show, ask, goHome, historyTracks),
+// and spotify.js for a player who brings Spotify songs.
 const Salle = (() => {
   const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   // The site served locally talks to the local server (npm run dev in server/), the published one to ROOMS_URL.
@@ -22,6 +23,9 @@ const Salle = (() => {
   let played = new Set(); // Deezer ids of the songs heard in this room's games: a new draw avoids them
 
   const available = () => !!BASE;
+  // The host leads (starts, moves on, replays); while the host's phone is away, anyone may.
+  const hostAway = () => !!room && !room.players.some((p) => p.host && p.online);
+  const leads = () => !!me && !!room && (me.host || hostAway());
   const link = (code) => `${location.origin}${location.pathname}?salle=${code}`;
   const save = () => store.set('salle', saved);
 
@@ -131,6 +135,7 @@ const Salle = (() => {
     status('Création de la salle…');
     try {
       const res = await fetch(`${BASE}/rooms`, { method: 'POST' });
+      if (res.status === 429) { status('Trop de salles créées d’ici en peu de temps. Réessaie dans une minute.', true); return; }
       if (!res.ok) throw new Error();
       const { code, hostKey } = await res.json();
       Stats.track('salle-creee');
@@ -195,15 +200,9 @@ const Salle = (() => {
   async function invite() {
     const url = link(saved.code);
     const text = `Rejoins ma salle « Qui écoute ça ? » : code ${saved.code}`;
-    if (navigator.share) {
-      try { await navigator.share({ title: 'Qui écoute ça ?', text, url }); return; } catch { /* closed: fall back to copy */ }
-    }
-    try {
-      await navigator.clipboard.writeText(url);
-      $('#room-live').textContent = 'Lien copié.';
-    } catch {
-      $('#room-live').textContent = url;
-    }
+    const done = await shareOrCopy({ title: 'Qui écoute ça ?', text, url }, url);
+    if (done === 'copied') $('#room-live').textContent = 'Lien copié.';
+    if (done === 'failed') $('#room-live').textContent = url;
   }
 
   /* ---------- Music: each phone brings its own ---------- */
@@ -539,7 +538,7 @@ const Salle = (() => {
           el('span', { className: 'status', textContent: (p.host ? 'hôte · ' : '') + status }),
         ]),
         me.host && p.id !== me.id
-          ? el('button', { type: 'button', className: 'kick', textContent: 'Retirer', ariaLabel: `Retirer ${p.name}`, onclick: () => send({ t: 'kick', id: p.id }) })
+          ? el('button', { type: 'button', className: 'kick', textContent: 'Retirer', ariaLabel: `Retirer ${p.name}`, onclick: async () => { if (await ask(`Retirer ${p.name} de la salle ?`, 'Retirer')) send({ t: 'kick', id: p.id }); } })
           : '',
       ]);
     }));
@@ -568,12 +567,14 @@ const Salle = (() => {
 
     const missing = room.players.filter((p) => !p.source).map((p) => p.name);
     const startBtn = $('#room-start');
-    startBtn.classList.toggle('hidden', !me.host);
+    startBtn.classList.toggle('hidden', !leads());
     startBtn.disabled = room.players.length < 2 || missing.length > 0;
     $('#room-wait').textContent = room.players.length < 2
       ? 'Invite au moins une autre personne pour jouer.'
       : missing.length ? `En attente de la musique de ${missing.join(', ')}.`
-        : me.host ? 'Tout le monde est prêt !' : 'Tout le monde est prêt. L’hôte va lancer la partie.';
+        : me.host ? 'Tout le monde est prêt !'
+          : leads() ? 'Tout le monde est prêt. L’hôte est déconnecté : tu peux lancer la partie.' : 'Tout le monde est prêt. L’hôte va lancer la partie.';
+    Game.leaders();
   }
 
   function start() {
@@ -592,6 +593,7 @@ const Salle = (() => {
     let cast = [];
     let soundFor = -1; // round whose sound this device already started
     let local = { index: -1, a: {} }; // this phone's answers to the current round, kept across reconnections
+    let shown = null; // the reveal on screen, for the "next" button when the host comes and goes
 
     const person = (id) => cast.find((c) => c.id === id) || room?.players.find((p) => p.id === id) || { id, name: '?', avatar: '' };
     const scoreOf = (id) => room?.players.find((p) => p.id === id)?.score ?? 0;
@@ -602,6 +604,7 @@ const Salle = (() => {
     function reset() {
       clearInterval(ticker);
       round = null;
+      shown = null;
       soundFor = -1;
       local = { index: -1, a: {} };
       Deezer.player.pause();
@@ -621,6 +624,7 @@ const Salle = (() => {
 
     function round_(r) {
       round = r;
+      shown = null;
       cast = r.cast;
       offset = r.now - Date.now();
       header(r.index, r.total);
@@ -717,6 +721,7 @@ const Salle = (() => {
         if (round?.index !== index) return; // the game moved on meanwhile
         await Deezer.player.start();
       } catch (e) {
+        if (e.replaced) return; // « Réécouter » tapped again: the newer load carries on
         // A reloaded page may not play sound before a touch: the button below does it.
         $('#rg-sound').textContent = e.name === 'NotAllowedError' ? 'Touche « Réécouter » pour lancer le son.' : e.message;
       }
@@ -789,10 +794,24 @@ const Salle = (() => {
       }));
 
       played.add(v.track.id);
-      const host = room?.players.find((p) => p.id === me.id)?.host;
-      $('#rv-next').classList.toggle('hidden', !host);
-      $('#rv-next').textContent = v.last ? 'Voir le podium' : 'Manche suivante';
-      $('#rv-wait').textContent = host ? '' : v.last ? 'L’hôte va dévoiler le podium…' : 'L’hôte lance la manche suivante…';
+      shown = v;
+      leaders();
+    }
+
+    // Who may move on: the host, or anyone while the host's phone is away.
+    function leaders() {
+      if (!room || !me) return;
+      const lead = leads();
+      const away = lead && !me.host;
+      if (shown) {
+        $('#rv-next').classList.toggle('hidden', !lead);
+        $('#rv-next').textContent = shown.last ? 'Voir le podium' : 'Manche suivante';
+        $('#rv-wait').textContent = away ? 'L’hôte est déconnecté : tu peux passer à la suite.'
+          : lead ? '' : shown.last ? 'L’hôte va dévoiler le podium…' : 'L’hôte lance la manche suivante…';
+      }
+      $('#fn-replay').classList.toggle('hidden', !lead);
+      $('#fn-wait').textContent = away ? 'L’hôte est déconnecté : tu peux relancer une partie.'
+        : lead ? '' : 'L’hôte peut relancer une partie avec les mêmes joueurs.';
     }
 
     // Ranks after this round and before it (ties share a rank), best first.
@@ -846,9 +865,7 @@ const Salle = (() => {
           el('p', { className: 'status', textContent: a.detail }),
         ]),
       ])));
-      const host = room?.players.find((p) => p.id === me.id)?.host;
-      $('#fn-replay').classList.toggle('hidden', !host);
-      $('#fn-wait').textContent = host ? '' : 'L’hôte peut relancer une partie avec les mêmes joueurs.';
+      leaders();
       Stats.track('salle-finie', { joueurs: String(f.cast.length) });
     }
 
@@ -857,7 +874,7 @@ const Salle = (() => {
       // Taps: they also keep the right to play sound on phones.
       $('#rv-next').onclick = () => { Deezer.player.activateElement(); send({ t: 'next' }); };
       $('#fn-replay').onclick = () => send({ t: 'replay' });
-      $('#fn-leave').onclick = () => { send({ t: 'leave' }); end(); };
+      $('#fn-leave').onclick = back;
     }
 
     function resend() {
@@ -866,8 +883,16 @@ const Salle = (() => {
       if (owner !== undefined || song !== undefined) send({ t: 'answer', index: round.index, owner, song });
     }
 
-    return { round: round_, progress, reveal, final, reset, scores, wire, resend };
+    return { round: round_, progress, reveal, final, reset, scores, wire, resend, leaders };
   })();
+
+  // « Quitter la salle », and the phone's back button: the seat is given up, so it asks first.
+  async function back() {
+    const playing = room && room.phase === 'playing';
+    if (!(await ask(playing ? 'Quitter la salle ? La partie continue sans toi.' : 'Quitter la salle ?', 'Quitter'))) return;
+    send({ t: 'leave' });
+    end();
+  }
 
   /* ---------- Wiring ---------- */
 
@@ -882,7 +907,7 @@ const Salle = (() => {
     $('#salle-join').onsubmit = join;
     $('#salle-code').oninput = (e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4); };
     $('#room-invite').onclick = invite;
-    $('#room-leave').onclick = () => { send({ t: 'leave' }); end(); };
+    $('#room-leave').onclick = back;
     $('#room-start').onclick = start;
     Game.wire();
     $('#room-dz-form').onsubmit = searchDeezer;
@@ -916,14 +941,9 @@ const Salle = (() => {
     if (ongoing?.token && (!code || code === ongoing.code)) {
       // Only a room the server says is gone is given up: a network hiccup keeps the seat and reconnects.
       const res = await fetch(`${BASE}/rooms/${ongoing.code}`).catch(() => null);
-      if (res?.status === 404) {
-        store.del('salle');
-        if (!code) {
-          goHome('salle');
-          status(`La salle ${ongoing.code} n’existe plus. Crée-en une nouvelle ou rejoins-en une autre.`, true);
-          return true;
-        }
-      } else {
+      // Gone (expired, or the game ended long ago): the usual start, without an error to read.
+      if (res?.status === 404) store.del('salle');
+      else {
         enter(ongoing);
         if (spotifyBack) {
           pickAgain();
@@ -947,5 +967,5 @@ const Salle = (() => {
     return false;
   }
 
-  return { boot, available };
+  return { boot, available, back };
 })();

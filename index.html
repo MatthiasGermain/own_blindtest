@@ -6,6 +6,9 @@
 <title>Blindtest</title>
 <meta name="description" content="Un blindtest sur ta propre musique : Deezer, Spotify ou YouTube Music. Trouve l'artiste, le titre, l'album, puis défie tes potes.">
 <meta name="author" content="Matthias Germain">
+<meta name="theme-color" content="#0e0d0c">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta property="og:type" content="website">
 <meta property="og:locale" content="fr_FR">
 <meta property="og:url" content="https://matthiasgermain.github.io/own_blindtest/">
@@ -30,7 +33,8 @@
     --accent-ink: #0e0d0c;
     --line: rgba(239, 230, 211, .18);
     --line-strong: rgba(239, 230, 211, .55);
-    --ko: #6d6962;
+    --ko: #8f8a80;
+    --error: #ff5c5c;
     --font-display: "Fraunces", "Cooper Black", Georgia, serif;
     --font-ui: "DM Mono", ui-monospace, "Cascadia Mono", monospace;
     --ease-out: cubic-bezier(.22, 1, .36, 1);
@@ -91,7 +95,7 @@
   ol { padding-left: 20px; margin: 0 0 8px; } ol li { margin-bottom: 8px; }
   p { margin: 0 0 12px; }
   .status { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
-  .error { color: var(--accent); }
+  .error { color: var(--error); }
   a { color: var(--accent); }
 
   .fields { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -137,6 +141,16 @@
     .tile-main .tile-name { font-size: 76px; }
   }
   .home-note { margin-top: 16px; }
+  .home-lead { margin: -8px 0 18px; font-size: 13px; }
+  .home-lead strong { color: var(--text); font-weight: 400; }
+  @media (max-width: 619px) {
+    /* Fichier and Spotify side by side: « Qui écoute ça ? » stays on the first screen. */
+    .tiles { grid-template-columns: 1fr 1fr; }
+    .tile-main, .tile-wide { grid-column: 1 / -1; }
+    .tile:not(.tile-main):not(.tile-wide) { padding: 16px 14px; }
+    .tile:not(.tile-main):not(.tile-wide) .tile-name { font-size: 30px; }
+    .tile:not(.tile-main):not(.tile-wide) .tile-desc { font-size: 12px; }
+  }
   .panel { animation: slide .45s var(--ease-out) both; }
   @keyframes slide { from { opacity: 0; transform: translateX(28px); } }
   button.back {
@@ -375,10 +389,28 @@
 
   /* ---------- Grand écran : on garde le rythme du téléphone, en deux colonnes ---------- */
   /* Pochette surprise */
-  .alt-game { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 18px; }
-  .alt-title { font-size: 22px; margin: 0; }
-  .alt-game .status { margin-top: 4px; }
-  .alt-game .actions { margin-top: 12px; }
+  .alt-title { font-size: 26px; margin: 18px 0 0; }
+  #screen-setup[data-game="covers"] .bt-only, #screen-setup[data-game="blindtest"] .cv-only { display: none !important; }
+  .game-switch { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line-strong); }
+  .game-switch label {
+    position: relative; margin: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px 8px; cursor: pointer;
+    font: 800 18px/1.1 var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; text-transform: none; letter-spacing: 0; color: var(--text);
+    transition: background .15s, color .15s;
+  }
+  .game-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+  .game-switch label:has(input:checked) { background: var(--text); color: var(--bg); }
+  .game-switch label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -5px; }
+  .source-links { display: flex; flex-wrap: wrap; gap: 2px 18px; margin: 8px 0 0; }
+  button.link {
+    font: 400 11px var(--font-ui); text-transform: uppercase; letter-spacing: .1em; background: none; color: var(--muted);
+    border: 0; border-radius: 0; padding: 4px 0; text-decoration: underline; text-underline-offset: 3px;
+  }
+  button.link:hover:not(:disabled) { transform: none; box-shadow: none; color: var(--text); }
+  .setup-go .status { flex-basis: 100%; margin: 0; }
+  @media (max-width: 619px) {
+    /* The start button stays in reach while the settings scroll by. */
+    .setup-go { position: sticky; bottom: 0; z-index: 2; background: var(--surface); padding: 14px 0 16px; border-top: 1px solid var(--line); }
+  }
   #cv-canvas { display: block; width: 100%; max-width: min(520px, 72vw); aspect-ratio: 1; height: auto; margin: 0 auto 16px; border: 1px solid var(--line-strong); image-rendering: pixelated; }
   .cv-side { margin: 0; }
   .cv-suggest { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 4px; max-height: 330px; overflow-y: auto; }
@@ -445,8 +477,8 @@
     #screen-setup { padding: 36px 40px; }
     .setup-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 56px; }
     .setup-col > label.first { margin-top: 0; }
-    .setup-col:last-child { border-left: 1px solid var(--line); padding-left: 56px; }
-    #screen-setup .actions { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--line); }
+    .setup-col + .setup-col { border-left: 1px solid var(--line); padding-left: 56px; }
+    #screen-setup .setup-go { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--line); }
     #btn-start { font-size: 20px; padding: 14px 32px; }
 
     .topbar strong { font-size: 30px; }
@@ -471,6 +503,11 @@
     .card { padding: 18px; }
     .vol { margin-left: 0; }
   }
+  .ask { background: var(--surface); color: var(--text); border: 1px solid var(--line-strong); padding: 24px; width: min(420px, calc(100vw - 32px)); }
+  .ask::backdrop { background: rgba(14, 13, 12, .75); }
+  .ask[open] { animation: rise .25s var(--ease-out) both; }
+  .ask-text { font-size: 24px; line-height: 1.15; margin: 0; }
+  .ask .actions { margin-top: 20px; }
   .credits { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 6px 18px; justify-content: space-between; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .1em; }
   .credits nav { display: flex; gap: 18px; }
   .credits a { color: var(--text); text-decoration: none; border-bottom: 1px solid var(--line-strong); transition: color .15s, border-color .15s; }
@@ -490,8 +527,11 @@
   <section id="screen-login" class="screen hidden">
     <div id="login-challenge" class="challenge hidden"><p class="challenge-title display" id="login-challenge-title"></p><p class="status" id="login-challenge-desc" style="margin:0"></p><div class="actions"><button id="btn-challenge-home" type="button">Relever le défi</button></div><p class="status" style="margin:10px 0 0">Pas besoin de compte : les extraits viennent de Deezer.</p></div>
 
+    <div class="challenge cv-dare hidden"><p class="challenge-title display"></p><p class="status" style="margin:0"></p><div class="actions"><button class="cv-dare-go" type="button">Relever le défi</button><button class="cv-dare-skip ghost" type="button">Ignorer</button></div><p class="status cv-dare-status" role="status"></p></div>
+
     <div id="home-pick">
       <h2 class="home-title">D'où vient ta musique ?</h2>
+      <p class="status home-lead">Ensuite, deux jeux au choix : le <strong>blindtest</strong> à l'écoute, ou <strong>Pochette surprise</strong> avec les pochettes de tes albums.</p>
       <div class="tiles">
         <button class="tile tile-main" type="button" data-open="deezer" style="--i: 0">
           <span class="tile-tag">Immédiat · sans mot de passe</span>
@@ -584,7 +624,7 @@
     <div class="card panel hidden" data-panel="spotify">
       <button class="back" type="button">← Retour</button>
       <h2>Ton compte Spotify</h2>
-      <p class="status" style="margin-top:-12px">Réservé aux testeurs ajoutés par l'organisateur.</p>
+      <p class="status" style="margin-top:-12px">Spotify limite l'accès à quelques testeurs. Pour en faire partie, écris à l'auteur du jeu depuis <a href="https://matthias-germain.vercel.app" target="_blank" rel="noopener" data-credit="spotify-acces">son portfolio</a>.</p>
       <div id="login-setup">
         <ol>
           <li>Crée une app sur <code>developer.spotify.com/dashboard</code> (API : <em>Web API</em> + <em>Web Playback SDK</em>).</li>
@@ -594,7 +634,7 @@
         <label for="client-id">Client ID</label>
         <input id="client-id" autocomplete="off" spellcheck="false">
       </div>
-      <p id="login-hint" class="status hidden">Il faut un compte Spotify Premium, ajouté à l'app par l'organisateur. À ouvrir dans Chrome ou Edge sur ordinateur.</p>
+      <p id="login-hint" class="status hidden">Il faut un compte Spotify Premium ajouté comme testeur. À ouvrir dans Chrome ou Edge sur ordinateur.</p>
       <div class="actions"><button id="btn-login">Se connecter à Spotify</button></div>
       <p id="login-error" class="status error"></p>
     </div>
@@ -739,7 +779,7 @@
     </div>
   </section>
 
-  <section id="screen-setup" class="card screen hidden">
+  <section id="screen-setup" class="card screen hidden" data-game="blindtest">
     <button id="btn-setup-back" class="back" type="button">← Accueil</button>
     <div id="challenge-box" class="challenge hidden">
       <p class="challenge-title display" id="challenge-title"></p>
@@ -749,40 +789,53 @@
         <button id="btn-challenge-skip" class="ghost">Ignorer</button>
       </div>
     </div>
+    <div class="challenge cv-dare hidden"><p class="challenge-title display"></p><p class="status" style="margin:0"></p><div class="actions"><button class="cv-dare-go" type="button">Relever le défi</button><button class="cv-dare-skip ghost" type="button">Ignorer</button></div><p class="status cv-dare-status" role="status"></p></div>
     <h2>Préparer la partie</h2>
+    <div class="game-switch" role="radiogroup" aria-label="Jeu">
+      <label><input type="radio" name="game" value="blindtest" checked> Blindtest</label>
+      <label><input type="radio" name="game" value="covers"> Pochette surprise</label>
+    </div>
     <div class="setup-cols">
     <div class="setup-col">
-    <label for="opt-mode">Mode</label>
-    <select id="opt-mode">
-      <option value="classic">Classique : un nombre de titres fixe</option>
-      <option value="sudden">Mort subite : jusqu'à la première erreur</option>
-    </select>
-    <p id="mode-hint" class="status hidden">Tu continues tant que tu trouves l'artiste ou le titre. Une erreur et c'est fini.</p>
-    <label for="opt-answers">Réponses</label>
-    <select id="opt-answers">
-      <option value="choice">À choisir : 4 propositions</option>
-      <option value="type">À taper : il faut tout écrire</option>
-    </select>
-    <label for="opt-source">Titres à deviner</label>
+    <label for="opt-source">Ta musique</label>
     <select id="opt-source">
       <option value="history">Mon historique d'écoute</option>
       <option value="dztop">Deezer : mon top</option>
       <option value="dzliked">Deezer : mes coups de cœur</option>
-      <option value="dzplaylist">Deezer : une de mes playlists</option>
-      <option value="liked">Mes titres likés</option>
-      <option value="top:short_term">Mes plus écoutés : 4 dernières semaines</option>
-      <option value="top:medium_term">Mes plus écoutés : 6 derniers mois</option>
-      <option value="top:long_term">Mes plus écoutés : depuis toujours</option>
-      <option value="playlist">Une de mes playlists</option>
+      <option value="dzplaylist">Deezer : une playlist</option>
+      <option value="liked">Spotify : titres likés</option>
+      <option value="top:short_term">Spotify : top 4 semaines</option>
+      <option value="top:medium_term">Spotify : top 6 mois</option>
+      <option value="top:long_term">Spotify : top de toujours</option>
+      <option value="playlist">Spotify : une playlist</option>
     </select>
     <div id="playlist-pick" class="hidden">
       <label for="opt-playlist">Playlist</label>
       <select id="opt-playlist"></select>
     </div>
     <p id="source-status" class="status">Chargement…</p>
-    <p id="player-status" class="status">Initialisation du lecteur…</p>
+    <p id="player-status" class="status bt-only">Initialisation du lecteur…</p>
+    <p class="source-links">
+      <button id="btn-home" class="link" type="button">Changer de source</button>
+      <button id="btn-reload" class="link" type="button">Recharger</button>
+      <button id="btn-forget-dz" class="link" type="button">Oublier le profil Deezer</button>
+      <button id="btn-logout" class="link" type="button">Déconnexion Spotify</button>
+    </p>
+    <div class="bt-only">
+    <label for="opt-mode">Mode</label>
+    <select id="opt-mode">
+      <option value="classic">Classique</option>
+      <option value="sudden">Mort subite</option>
+    </select>
+    <p id="mode-hint" class="status hidden">Tu continues tant que tu trouves l'artiste ou le titre. Une erreur et c'est fini.</p>
+    <label for="opt-answers">Réponses</label>
+    <select id="opt-answers">
+      <option value="choice">À choisir : 4 propositions</option>
+      <option value="type">À taper</option>
+    </select>
     </div>
-    <div class="setup-col">
+    </div>
+    <div class="setup-col bt-only">
     <label class="first">Champs à deviner</label>
     <div id="opt-fields" class="fields">
       <label data-sources="history liked top playlist dztop dzliked dzplaylist"><input type="checkbox" value="artist"> Artiste</label>
@@ -803,7 +856,7 @@
           <option value="10">10 s</option>
           <option value="20" selected>20 s</option>
           <option value="30">30 s</option>
-          <option value="0">Illimitée</option>
+          <option value="0">Tout le morceau</option>
         </select>
       </div>
     </div>
@@ -813,19 +866,15 @@
       <option value="begin">Début du morceau</option>
     </select>
     </div>
-    </div>
-    <div class="actions">
-      <button id="btn-start" disabled>Lancer le blindtest</button>
-      <button id="btn-reload" class="ghost">Recharger</button>
-      <button id="btn-home" class="ghost">Changer d'historique</button>
-      <button id="btn-logout" class="ghost">Déconnexion</button>
-      <button id="btn-forget-dz" class="ghost">Oublier le profil Deezer</button>
-    </div>
-    <div class="alt-game">
+    <div class="setup-col cv-only">
       <p class="alt-title display">Pochette surprise</p>
-      <p class="status">Retrouve tes albums à partir de leur pochette pixelisée : 5 pochettes, 6 essais chacune, un indice à chaque erreur.</p>
-      <div class="actions"><button id="btn-covers" class="ghost" type="button" disabled>Jouer aux pochettes</button></div>
-      <p class="status" id="covers-status" role="status"></p>
+      <p class="status">Retrouve tes albums à partir de leur pochette pixelisée : 5 pochettes, 6 essais chacune, un indice à chaque erreur. Pas besoin de son.</p>
+    </div>
+    </div>
+    <div class="actions setup-go">
+      <button id="btn-start" class="bt-only" type="button" disabled>Lancer le blindtest</button>
+      <button id="btn-covers" class="cv-only" type="button" disabled>Lancer Pochette surprise</button>
+      <p class="status cv-only" id="covers-status" role="status"></p>
     </div>
   </section>
 
@@ -867,15 +916,18 @@
       <p class="round-quit"><button id="cv-quit" class="quit" type="button">Quitter la partie</button></p>
     </div>
     <div id="cv-end" class="card hidden">
-      <button id="cv-end-back" class="back" type="button">← Retour</button>
+      <button id="cv-end-back" class="back" type="button">← Accueil</button>
       <div class="end-body">
         <div class="end-main">
           <h2>Pochette surprise</h2>
           <p class="big" id="cv-end-score"></p>
+          <p id="cv-end-verdict" class="verdict hidden"></p>
           <p class="squares cv-grid" id="cv-end-grid"></p>
+          <p class="squares cv-grid hidden" id="cv-end-grid-them"></p>
           <div class="actions">
-            <button id="cv-share" type="button">Partager</button>
+            <button id="cv-share" type="button">Partager et défier</button>
             <button id="cv-again" class="ghost" type="button">Rejouer</button>
+            <button id="cv-settings" class="ghost" type="button">Réglages</button>
           </div>
           <p class="status" id="cv-share-feedback"></p>
         </div>
@@ -890,7 +942,7 @@
     <p>Ton compte Spotify n'est pas dans la liste des <strong>testeurs</strong> de cette app. Spotify bloque donc l'accès à ta bibliothèque.</p>
     <ol>
       <li>Ouvre Spotify → <em>Compte</em> → <em>Profil</em> et note l'<strong>adresse e-mail</strong> de ton compte.</li>
-      <li>Envoie-la à l'organisateur pour qu'il t'ajoute comme testeur.</li>
+      <li>Envoie-la à l'auteur du jeu depuis <a href="https://matthias-germain.vercel.app" target="_blank" rel="noopener" data-credit="spotify-acces">son portfolio</a>, pour être ajouté comme testeur.</li>
       <li>Une fois ajouté, clique sur <em>Réessayer</em>.</li>
     </ol>
     <p class="status">Pas le bon compte Spotify ? Déconnecte-toi et reconnecte-toi avec le bon.</p>
@@ -970,8 +1022,19 @@
     </div>
     <ul class="recap" id="end-recap"></ul>
     </div>
-    <div class="actions"><button id="btn-again" class="ghost">Nouvelle partie</button></div>
+    <div class="actions">
+      <button id="btn-again" class="ghost" type="button">Rejouer</button>
+      <button id="btn-settings" class="ghost" type="button">Réglages</button>
+    </div>
   </section>
+
+  <dialog id="ask" class="ask" aria-labelledby="ask-text">
+    <p id="ask-text" class="ask-text display"></p>
+    <div class="actions">
+      <button id="ask-yes" type="button">Oui</button>
+      <button id="ask-no" class="ghost" type="button">Annuler</button>
+    </div>
+  </dialog>
 
   <footer class="credits">
     <span>Un projet de <a href="https://matthias-germain.vercel.app" target="_blank" rel="noopener" data-credit="portfolio">Matthias Germain</a></span>
@@ -982,14 +1045,16 @@
   </footer>
 </main>
 <!-- Change ?v= on each release: a fresh page then never runs scripts kept in the browser cache. -->
-<script src="config.js?v=36"></script>
-<script src="stats.js?v=36"></script>
-<script src="scoring.js?v=36"></script>
-<script src="challenge.js?v=36"></script>
-<script src="history.js?v=36"></script>
-<script src="deezer.js?v=36"></script>
-<script src="room.js?v=36"></script>
-<script src="cover.js?v=36"></script>
-<script src="app.js?v=36"></script>
+<script src="config.js?v=38"></script>
+<script src="util.js?v=38"></script>
+<script src="stats.js?v=38"></script>
+<script src="scoring.js?v=38"></script>
+<script src="challenge.js?v=38"></script>
+<script src="history.js?v=38"></script>
+<script src="deezer.js?v=38"></script>
+<script src="spotify.js?v=38"></script>
+<script src="room.js?v=38"></script>
+<script src="cover.js?v=38"></script>
+<script src="app.js?v=38"></script>
 </body>
 </html>

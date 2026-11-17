@@ -9,6 +9,7 @@ export { Room };
 export interface Env {
   ROOMS: DurableObjectNamespace<Room>;
   ALLOWED_ORIGINS: string;
+  CREATE_LIMIT?: RateLimit; // rooms created per address and per minute (wrangler.jsonc)
 }
 
 // No I or O: a code read aloud across a living room must not be ambiguous.
@@ -35,11 +36,14 @@ export default {
     const url = new URL(request.url);
     const origin = request.headers.get('Origin');
     const headers = cors(origin, env);
-    // Rooms are only opened from the game's own site.
-    if (origin && !headers['Access-Control-Allow-Origin']) return json({ error: 'origin' }, 403, {});
+    // Rooms are only opened from the game's own site: a browser always says where it comes from.
+    if (!headers['Access-Control-Allow-Origin']) return json({ error: 'origin' }, 403, {});
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
 
     if (url.pathname === '/rooms' && request.method === 'POST') {
+      // A script creating rooms in a loop is cut off: each room is storage and an alarm.
+      const ip = request.headers.get('CF-Connecting-IP') || 'local';
+      if (env.CREATE_LIMIT && !(await env.CREATE_LIMIT.limit({ key: ip })).success) return json({ error: 'too-many' }, 429, headers);
       for (let i = 0; i < 6; i++) {
         const code = newCode();
         const hostKey = await env.ROOMS.getByName(code).init(code);
