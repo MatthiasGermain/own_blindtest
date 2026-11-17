@@ -101,10 +101,23 @@ const Deezer = (() => {
     return out.slice(0, max);
   }
 
+  // Deezer's lists give only the main artist: the featured ones are in the title,
+  // "Cuenta (feat. Meryl & Shay)" or "Get Lucky (Radio Edit - feat. Pharrell Williams and Nile Rodgers)".
+  const FEAT = /[([][^)\]]*?\b(?:feat|ft|featuring)\b\.?\s+([^)\]]+)[)\]]/i;
+  function artistsOf(d) {
+    const out = [d.artist?.name || '?'];
+    const featured = FEAT.exec(d.title || '')?.[1] || '';
+    for (const name of featured.split(/\s*(?:,|&|\band\b|\bet\b)\s*/i)) {
+      const n = name.trim();
+      if (n && !out.some((a) => a.toLowerCase() === n.toLowerCase())) out.push(n);
+    }
+    return out;
+  }
+
   const toTrack = (d) => (!d?.preview || d.readable === false ? null : {
     uri: `dz:${d.id}`,
     name: d.title_short || d.title,
-    artists: [d.artist?.name || '?'],
+    artists: artistsOf(d),
     artistId: d.artist?.id,
     album: d.album?.title || '',
     albumId: d.album?.id || null,

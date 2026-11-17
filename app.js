@@ -419,8 +419,12 @@ function buildOptions(field, t) {
   const sameArtist = shuffle(game.library.filter(byArtist)).map((x) => answerText(field, x));
   // Albums the player has not met yet are padded with the artist's discography (an imported history knows no album).
   const discography = field === 'album' ? shuffle((t.discography || []).map((a) => Scoring.clean(a))) : [];
+  // Several artists to find: the wrong answers list several too, keeping one of the real ones,
+  // so the right answer is not simply the only one with a comma.
+  const several = (x, i) => (x.artists.length > 1 ? x.artists.join(', ')
+    : (i % 2 ? [t.artists[0], x.artists[0], ...t.artists.slice(2)] : [x.artists[0], ...t.artists.slice(1)]).join(', '));
   const pool = field === 'artist'
-    ? shuffle(others).map((x) => x.artists[0])
+    ? shuffle(others).map((x, i) => (t.artists.length > 1 ? several(x, i) : x.artists[0]))
     : [...sameArtist, ...discography, ...shuffle(others).map((x) => answerText(field, x))];
   const seen = new Set([Scoring.norm(right)]);
   const wrong = [];
