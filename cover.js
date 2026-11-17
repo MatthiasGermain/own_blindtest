@@ -54,6 +54,7 @@ const Covers = (() => {
     return {
       ...e,
       dzId: d ? String(d.id) : null,
+      artistId: d?.artist?.id || null,
       cover,
       year: parseInt(d?.release_date, 10) || e.year || null,
       genre: d?.genres?.data?.[0]?.name || '',
@@ -63,11 +64,14 @@ const Covers = (() => {
 
   /* ---------- Game ---------- */
 
-  async function start() {
+  // from: 'setup' (the setup screen's button) or 'end' (« Rejouer »): where the progress is shown.
+  async function start(from = 'setup') {
     const list = candidates(typeof tracks !== 'undefined' ? tracks : []);
-    const say = (text, error = false) => { $('#covers-status').textContent = text; $('#covers-status').classList.toggle('error', error); };
+    const out = $(from === 'end' ? '#cv-share-feedback' : '#covers-status');
+    const button = $(from === 'end' ? '#cv-again' : '#btn-covers');
+    const say = (text, error = false) => { out.textContent = text; out.classList.toggle('error', error); };
     if (list.length < ROUNDS) { say(`Il faut au moins ${ROUNDS} albums différents dans ces titres. Choisis une autre source.`, true); return; }
-    $('#btn-covers').disabled = true;
+    button.disabled = true;
     say('Préparation des pochettes…');
     try {
       // Five albums with a cover, of five different artists.
@@ -95,13 +99,13 @@ const Covers = (() => {
     } catch (e) {
       say(`Deezer ne répond pas (${e.message}).`, true);
     } finally {
-      $('#btn-covers').disabled = false;
+      button.disabled = false;
     }
   }
 
   function openRound() {
     const album = game.rounds[game.index];
-    round = { album, tries: [], done: false, found: false };
+    round = { album, tries: [], done: false, found: false, artist: '' }; // artist: the right one, once named
     clearTimeout(snippetTimer);
     Deezer.player.pause();
     $('#cv-num').textContent = `${game.index + 1} / ${game.rounds.length}`;
@@ -179,7 +183,7 @@ const Covers = (() => {
   function guess(g) {
     if (!round || round.done) return;
     const verdict = g ? judge(g) : 'skip';
-    round.tries.push({ verdict, text: g ? (g.artist ? `${g.title} — ${g.artist}` : g.title) : 'Passé' });
+    round.tries.push({ verdict, key: g?.artist ? keyOf(g) : null, text: g ? (g.artist ? `${g.title} — ${g.artist}` : g.title) : 'Passé' });
     $('#cv-guess').value = '';
     clearTimeout(suggestTimer);
     suggestSeq++; // a search still on its way is dropped
@@ -189,9 +193,11 @@ const Covers = (() => {
     paintTries();
     draw();
     hints();
-    if (round.done) finishRound();
-    else if (verdict === 'artist') $('#cv-sound').textContent = 'Bon artiste, mais pas cet album.';
-    else $('#cv-sound').textContent = '';
+    if (round.done) { finishRound(); return; }
+    if (verdict === 'artist') round.artist = g.artist;
+    $('#cv-sound').textContent = verdict === 'artist' ? 'Bon artiste, mais pas cet album : choisis parmi ses albums.' : '';
+    // The right artist stays in the field: only the album is left to find.
+    if (round.artist) { $('#cv-guess').value = round.artist; suggest(); }
   }
 
   const MARK = { right: '🟩', artist: '🟨', wrong: '🟥', skip: '⬛' };
@@ -203,6 +209,15 @@ const Covers = (() => {
     ])));
   }
 
+  // An artist's albums, fetched once per game.
+  const discographies = new Map();
+  // The artist named is the right one: their Deezer id is the album's, when Deezer has the album.
+  function discography(name) {
+    const k = norm(name);
+    if (!discographies.has(k)) discographies.set(k, Deezer.album.ofArtist(name, round.album.artistId).catch(() => { discographies.delete(k); return []; }));
+    return discographies.get(k);
+  }
+
   // Suggestions: the player's own albums that match, then Deezer's. Never a cover: it would give it away.
   function suggest() {
     clearTimeout(suggestTimer);
@@ -210,16 +225,21 @@ const Covers = (() => {
     const box = $('#cv-suggest');
     if (q.length < 2) { shown = []; box.replaceChildren(); return; }
     const n = norm(q);
-    const mine = game.library.filter((e) => norm(e.title).includes(n) || norm(e.artist).includes(n)).slice(0, 4)
-      .map((e) => ({ title: e.title, artist: e.artist, id: null }));
+    // The right artist in the field: all of their albums, not a mix of everything that matches.
+    const artistOnly = !!round.artist && n === norm(round.artist);
+    const max = artistOnly ? 60 : 8;
+    // Albums already tried are not offered again.
+    const keys = new Set(round.tries.filter((t) => t.key).map((t) => t.key));
+    const fresh = (a) => !keys.has(keyOf(a)) && keys.add(keyOf(a));
+    const mine = game.library.filter((e) => (artistOnly ? norm(e.artist) === n : norm(e.title).includes(n) || norm(e.artist).includes(n)))
+      .map((e) => ({ title: e.title, artist: e.artist, id: null })).filter(fresh).slice(0, artistOnly ? max : 4);
     render(mine);
     const seq = ++suggestSeq;
     suggestTimer = setTimeout(async () => {
-      const found = await Deezer.album.search(q).catch(() => []);
+      const found = await (artistOnly ? discography(q) : Deezer.album.search(q, max)).catch(() => []);
       if (seq !== suggestSeq) return;
-      const keys = new Set(mine.map(keyOf));
-      render([...mine, ...found.filter((a) => !keys.has(keyOf(a)) && keys.add(keyOf(a)))].slice(0, 8));
-    }, 250);
+      render([...mine, ...found.filter(fresh)].slice(0, max));
+    }, artistOnly ? 0 : 250);
     function render(list) {
       shown = list;
       box.replaceChildren(...list.map((a) => el('li', {}, el('button', { type: 'button', onclick: () => guess(a) }, [
@@ -321,13 +341,13 @@ const Covers = (() => {
   }
 
   function wire() {
-    $('#btn-covers').onclick = start;
+    $('#btn-covers').onclick = () => start('setup');
     $('#cv-form').onsubmit = submit;
     $('#cv-guess').oninput = suggest;
     $('#cv-skip').onclick = () => guess(null);
     $('#cv-listen').onclick = listen;
     $('#cv-next').onclick = next;
-    $('#cv-again').onclick = () => { backToSetup(); start(); };
+    $('#cv-again').onclick = () => start('end');
     $('#cv-share').onclick = share;
     $('#cv-quit').onclick = quit;
     $('#cv-end-back').onclick = quit;

@@ -202,6 +202,21 @@ const Deezer = (() => {
       return null;
     },
     get: (id) => call(`/album/${id}`),
+    // Every album of an artist (albums first, the best known first, then EPs and singles).
+    // By Deezer id when known: a search by name often finds a namesake instead.
+    async ofArtist(name, id = null) {
+      if (!id) {
+        const wanted = Scoring.norm(name);
+        const res = await call(`/search/artist?q=${encodeURIComponent(name)}&limit=10`);
+        const same = (res.data || []).filter((a) => Scoring.norm(a.name) === wanted).sort((a, b) => (b.nb_fan || 0) - (a.nb_fan || 0));
+        id = (same[0] || res.data?.[0])?.id;
+        if (!id) return [];
+      }
+      const list = await all(`/artist/${id}/albums`, 200);
+      const rank = { album: 0, ep: 1, compile: 2, single: 3 };
+      return list.sort((a, b) => (rank[a.record_type] ?? 2) - (rank[b.record_type] ?? 2) || (b.fans || 0) - (a.fans || 0))
+        .map((a) => ({ id: String(a.id), title: a.title, artist: name }));
+    },
   };
 
   return { resolve, refresh, albums, player, profile, album: albumCatalog };
