@@ -97,14 +97,23 @@ async function getToken() {
   return store.get('token').access;
 }
 
-// Spotify's "too many requests": a short wait is waited out; a long one is remembered, and no call goes out
-// before it ends (every call during the block can make it last longer).
+// Spotify's "too many requests". Its Retry-After header is not readable from a web page (Spotify does not
+// expose it), so the length of the block is unknown: each new refusal doubles the gap before the next try
+// (30 s, 2 min, 10 min, 30 min, 1 h), and no call goes out meanwhile, since calls during a block prolong it.
+const PAUSES = [30, 120, 600, 1800, 3600];
+
 function spotifyPause() {
   const until = store.get('spotifyPause', 0);
   if (Date.now() >= until) return null;
   const s = Math.ceil((until - Date.now()) / 1000);
   const wait = s < 60 ? `${s} s` : s < 3600 ? `${Math.ceil(s / 60)} min` : `${Math.floor(s / 3600)} h ${String(Math.ceil((s % 3600) / 60)).padStart(2, '0')}`;
-  return Object.assign(new Error(`Spotify limite les appels de l'app pour le moment : réessaie dans ${wait}.`), { rateLimited: true });
+  return Object.assign(new Error(`Spotify bloque les appels de l'app, pour une durée qu'il ne précise pas. Prochain essai possible dans ${wait}`), { rateLimited: true });
+}
+
+function spotifyRefused(retryAfter) {
+  const n = store.get('spotifyRefusals', 0);
+  store.set('spotifyRefusals', n + 1);
+  store.set('spotifyPause', Date.now() + Math.max(retryAfter, PAUSES[Math.min(n, PAUSES.length - 1)]) * 1000);
 }
 
 async function api(path, opts = {}) {
@@ -117,11 +126,13 @@ async function api(path, opts = {}) {
       headers: { Authorization: 'Bearer ' + await getToken(), ...(opts.body ? { 'Content-Type': 'application/json' } : {}) },
     });
     if (res.status === 429) {
-      const wait = Number(res.headers.get('Retry-After')) || 2;
-      if (wait <= 10 && attempt < 2) { await sleep(wait * 1000); continue; }
-      store.set('spotifyPause', Date.now() + Math.max(wait, 30) * 1000);
+      // Read when Spotify allows it (it may some day); otherwise one short retry, then the backoff.
+      const wait = Number(res.headers.get('Retry-After')) || 0;
+      if (attempt === 0 && wait <= 10) { await sleep((wait || 3) * 1000); continue; }
+      spotifyRefused(wait);
       throw spotifyPause();
     }
+    store.del('spotifyRefusals');
     if (res.status >= 500 && isGet && attempt < 3) { await sleep(1000 * 2 ** attempt); continue; }
     const txt = await res.text();
     let data = null;

@@ -18,6 +18,7 @@ const Salle = (() => {
   let retries = 0;
   let retryTimer = null;
   let music = null; // { source, label, avatar, tracks } chosen on this phone
+  let changing = false; // the player is picking another source: the server's old one must not hide the picker
 
   const available = () => !!BASE;
   const link = (code) => `${location.origin}${location.pathname}?salle=${code}`;
@@ -97,6 +98,7 @@ const Salle = (() => {
     me = null;
     saved = null;
     music = null;
+    changing = false;
     store.del('salle');
     goHome('salle');
     status(message, !!message);
@@ -198,6 +200,7 @@ const Salle = (() => {
 
   function useMusic(m) {
     music = m;
+    changing = false;
     $('#room-music-status').textContent = '';
     renderMusic();
     send({ t: 'music', source: m.source, avatar: m.avatar, tracks: m.tracks });
@@ -223,6 +226,7 @@ const Salle = (() => {
   /* Which titles: the account's likes first, then its playlists. */
 
   function showLists(title, rows) {
+    pickAgain();
     $('#room-sources').classList.add('hidden');
     $('#room-lists').classList.remove('hidden');
     $('#room-lists-title').textContent = title;
@@ -231,6 +235,13 @@ const Salle = (() => {
       el('span', {}, [el('strong', { textContent: r.name }), el('span', { className: 'status', textContent: r.detail })]),
     ]))));
     $('#room-lists-items').scrollTop = 0;
+  }
+
+  // Back to the sources, even when a music is already in the pot.
+  function pickAgain() {
+    music = null;
+    changing = true;
+    renderMusic();
   }
 
   function hideLists() {
@@ -442,7 +453,7 @@ const Salle = (() => {
   function renderMusic() {
     // After a reload the music is only known by the server: the lobby says so instead of asking again.
     const mine = room?.players.find((p) => p.id === me?.id);
-    const chosen = !!music || !!mine?.source;
+    const chosen = !changing && (!!music || !!mine?.source);
     $('#room-music-chosen').classList.toggle('hidden', !chosen);
     $('#room-music-pick').classList.toggle('hidden', chosen);
     if (music) $('#room-music-label').textContent = `${music.tracks.length} titres de ${music.label}`;
@@ -774,11 +785,7 @@ const Salle = (() => {
     $('#room-same').onchange = (e) => send({ t: 'settings', sameRoom: e.target.checked });
     // Phones only let a page play sound after a touch: any tap in the room unlocks it for the rounds.
     $('#screen-room').addEventListener('click', () => Deezer.player.activateElement(), true);
-    $('#room-change').onclick = () => {
-      music = null;
-      $('#room-music-chosen').classList.add('hidden');
-      $('#room-music-pick').classList.remove('hidden');
-    };
+    $('#room-change').onclick = () => { hideLists(); pickAgain(); };
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && saved && !ws) { retries = 0; connect(); }
     });
@@ -800,6 +807,7 @@ const Salle = (() => {
         if (res.ok) {
           enter(ongoing);
           if (spotifyBack) {
+            pickAgain();
             const error = $('#login-error').textContent;
             if (error) { $('#login-error').textContent = ''; $('#room-music-status').textContent = `Connexion Spotify : ${error}`; }
             else if (store.get('token')) fromSpotify();
