@@ -27,7 +27,7 @@ Avec Deezer et le fichier, le son vient des extraits Deezer de 30 secondes. Avec
 ## Comment on joue
 
 - **Deux modes.** *Classique* : un nombre de titres fixé à l'avance. *Mort subite* : tu continues tant que tu trouves l'artiste ou le titre.
-- **Deux façons de répondre.** *À choisir* : 4 propositions tirées de ta propre musique, et un curseur pour les années (par défaut sur téléphone). *À taper* : il faut tout écrire, les fautes de frappe sont tolérées.
+- **Deux façons de répondre.** *À choisir* (par défaut sur téléphone) : une question à la fois, artiste puis titre puis album, avec 4 propositions et un seul essai. Une fois l'artiste passé, les titres et albums proposés sont tous les siens, d'abord ceux de ta musique : il faut vraiment reconnaître le morceau. Les années viennent à la fin, sur un curseur. *À taper* : il faut tout écrire, les fautes de frappe sont tolérées.
 - **Des questions qui dépendent de la source.** Artiste, titre, album, année de sortie, année où tu l'as liké, année où tu l'as découvert.
 - **Partage et défis.** Ton résultat se partage en carrés (🟧 tout bon, 🟫 en partie, ⬛ raté). Le lien contient la partie complète : ton pote rejoue les mêmes titres et doit battre ton score, sans compte.
 - **Pochette surprise.** Un jeu à part sur l'accueil : tu choisis ta musique (profil Deezer, historique ou Spotify), puis 5 pochettes de tes albums, 6 essais chacune. Chaque essai rend la pochette plus nette et donne un indice : l'année, le genre, les initiales de l'artiste, puis un extrait de 5 secondes. Mêmes carrés à partager (🟧 trouvé, 🟫 bon artiste, ⬛ raté), avec un lien vers les mêmes pochettes.
@@ -61,7 +61,7 @@ index.html     écrans, styles (DA « Disco grain »)
 util.js        petits outils communs ($, stockage, mélange, partage)
 app.js         écrans, bouton retour, sources, blindtest solo, partage et défis, accueil
 spotify.js     connexion Spotify (OAuth PKCE), API avec pauses en cas de blocage, lecteur Premium
-deezer.js      API publique Deezer (JSONP), profils, albums, lecteur d'extraits
+deezer.js      API publique Deezer (JSONP), profils, albums, titres phares d'un artiste, lecteur d'extraits
 history.js     lecture des exports Spotify et YouTube Music (ZIP ou JSON)
 scoring.js     barème (textes tolérants, années, artistes multiples)
 challenge.js   liens de défi du blindtest (JSON compressé dans l'URL)

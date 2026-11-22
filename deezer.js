@@ -204,28 +204,46 @@ const Deezer = (() => {
     },
     get: (id) => call(`/album/${id}`),
     // Every album of an artist (albums first, the best known first, then EPs and singles), fetched once.
-    // By Deezer id when known: a search by name often finds a namesake instead.
-    ofArtist(name, id = null) {
-      const key = id ? `id:${id}` : `name:${Scoring.norm(name)}`;
-      if (!discographies.has(key)) discographies.set(key, discography(name, id).catch((e) => { discographies.delete(key); throw e; }));
-      return discographies.get(key);
-    },
+    ofArtist: (name, id = null) => once(discographies, artistKey(name, id), async () => {
+      const artist = id || await artistIdOf(name);
+      if (!artist) return [];
+      const list = await all(`/artist/${artist}/albums`, 200);
+      const rank = { album: 0, ep: 1, compile: 2, single: 3 };
+      return list.sort((a, b) => (rank[a.record_type] ?? 2) - (rank[b.record_type] ?? 2) || (b.fans || 0) - (a.fans || 0))
+        .map((a) => ({ id: String(a.id), title: a.title, artist: name }));
+    }),
   };
 
-  const discographies = new Map();
-  async function discography(name, id) {
-    if (!id) {
-      const wanted = Scoring.norm(name);
-      const res = await call(`/search/artist?q=${encodeURIComponent(name)}&limit=10`);
-      const same = (res.data || []).filter((a) => Scoring.norm(a.name) === wanted).sort((a, b) => (b.nb_fan || 0) - (a.nb_fan || 0));
-      id = (same[0] || res.data?.[0])?.id;
-      if (!id) return [];
-    }
-    const list = await all(`/artist/${id}/albums`, 200);
-    const rank = { album: 0, ep: 1, compile: 2, single: 3 };
-    return list.sort((a, b) => (rank[a.record_type] ?? 2) - (rank[b.record_type] ?? 2) || (b.fans || 0) - (a.fans || 0))
-      .map((a) => ({ id: String(a.id), title: a.title, artist: name }));
-  }
+  /* ---------- Artists: their best-known titles, wrong answers to « which title? » ---------- */
 
-  return { resolve, refresh, player, profile, album: albumCatalog };
+  // A request made once per key; a failed one is forgotten, to be tried again.
+  function once(cache, key, load) {
+    if (!cache.has(key)) cache.set(key, load().catch((e) => { cache.delete(key); throw e; }));
+    return cache.get(key);
+  }
+  const discographies = new Map();
+  const tops = new Map();
+  const artistIds = new Map();
+  // By Deezer id when known: a search by name often finds a namesake instead.
+  const artistKey = (name, id) => (id ? `id:${id}` : `name:${Scoring.norm(name)}`);
+
+  // The artist with exactly that name and the most fans, else the search's first answer.
+  const artistIdOf = (name) => once(artistIds, Scoring.norm(name), async () => {
+    const wanted = Scoring.norm(name);
+    const res = await call(`/search/artist?q=${encodeURIComponent(name)}&limit=10`);
+    const same = (res.data || []).filter((a) => Scoring.norm(a.name) === wanted).sort((a, b) => (b.nb_fan || 0) - (a.nb_fan || 0));
+    return (same[0] || res.data?.[0])?.id || null;
+  });
+
+  const artistCatalog = {
+    // The artist's best-known titles, the most played first, fetched once.
+    top: (name, id = null) => once(tops, artistKey(name, id), async () => {
+      const artist = id || await artistIdOf(name);
+      if (!artist) return [];
+      const res = await call(`/artist/${artist}/top?limit=50`);
+      return (res.data || []).map((d) => d.title_short || d.title).filter(Boolean);
+    }),
+  };
+
+  return { resolve, refresh, player, profile, album: albumCatalog, artist: artistCatalog };
 })();
