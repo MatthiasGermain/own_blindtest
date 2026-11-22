@@ -271,7 +271,10 @@ const LABELS = { artist: 'Artiste', title: 'Titre', album: 'Album', year: 'Sorti
 // of that same artist give nothing away, and that is what keeps them hard. The years come last, together.
 const TEXT_FIELDS = ['artist', 'title', 'album'];
 const YEAR_PROPS = { year: 'releaseYear', added: 'addedYear', discovered: 'firstYear' };
-const ANSWER_PAUSE = 900; // how long the right answer stays on screen before the next question
+// How long an answer stays on screen before the next question: just the time to see it when right,
+// longer when wrong, to read the right one.
+const PAUSE_RIGHT = 550;
+const PAUSE_WRONG = 1100;
 const EXTRAS_WAIT = 4000; // how long a question waits for Deezer before making do with the player's music
 const choiceMode = () => game?.answers === 'choice';
 const sameText = (a, b) => Scoring.norm(a) === Scoring.norm(b);
@@ -397,7 +400,7 @@ function choose(field, value) {
     b.classList.toggle('wrong', b.textContent === value && !q.marks[field]);
   }
   renderSteps();
-  setTimeout(() => { q.busy = false; if (onScreen(q)) advance(q); }, ANSWER_PAUSE);
+  setTimeout(() => { q.busy = false; if (onScreen(q)) advance(q); }, q.marks[field] ? PAUSE_RIGHT : PAUSE_WRONG);
 }
 
 function advance(q) {

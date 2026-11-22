@@ -44,7 +44,10 @@
   }
 
   * { box-sizing: border-box; }
-  html { background: var(--bg); }
+  /* No double-tap zoom (tapping + twice on a year zoomed the page); pinching still zooms.
+     No grey or blue flash on each tap either: buttons give their own feedback. */
+  html { background: var(--bg); touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  button, a, input, select, label { touch-action: manipulation; }
   body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font: 400 14px/1.6 var(--font-ui); }
   body::before { content: ""; position: fixed; inset: 0; background: var(--noise); background-size: 160px; opacity: .35; pointer-events: none; z-index: 0; }
   main { position: relative; z-index: 1; max-width: 660px; margin: 0 auto; padding: 40px 16px 72px; }
@@ -80,14 +83,16 @@
     transition: transform .15s var(--ease-out), box-shadow .15s var(--ease-out), background .15s;
     box-shadow: 0 0 0 0 var(--text);
   }
-  button:hover:not(:disabled) { transform: translate(-2px, -2px); box-shadow: 3px 3px 0 0 var(--text); }
+  /* Hover effects only with a real pointer: on a touch screen they stay stuck on the last button tapped. */
+  @media (hover: hover) { button:hover:not(:disabled) { transform: translate(-2px, -2px); box-shadow: 3px 3px 0 0 var(--text); } }
   button:active:not(:disabled) { transform: none; box-shadow: 0 0 0 0 var(--text); }
+  @media (hover: none) { button:active:not(:disabled) { transform: scale(.97); } }
   button:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
   button.ghost {
     font: 400 12px var(--font-ui); text-transform: uppercase; letter-spacing: .1em;
     background: transparent; color: var(--text); border: 1px solid var(--line-strong); padding: 10px 16px;
   }
-  button.ghost:hover:not(:disabled) { border-color: var(--text); box-shadow: 3px 3px 0 0 var(--accent); }
+  @media (hover: hover) { button.ghost:hover:not(:disabled) { border-color: var(--text); box-shadow: 3px 3px 0 0 var(--accent); } }
   button:disabled { opacity: .35; cursor: not-allowed; }
   .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 24px; }
 
@@ -127,13 +132,13 @@
     font: inherit; background: var(--surface); color: var(--text); border: 1px solid var(--line-strong);
     animation: rise .5s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 80ms);
   }
-  .tile:hover:not(:disabled) { transform: translate(-3px, -3px); box-shadow: 5px 5px 0 0 var(--accent); }
+  @media (hover: hover) { .tile:hover:not(:disabled) { transform: translate(-3px, -3px); box-shadow: 5px 5px 0 0 var(--accent); } }
   .tile-name { font: 900 clamp(42px, 11vw, 60px)/.95 var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1, "opsz" 144; letter-spacing: -0.03em; }
   .tile-tag { font-size: 10px; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); }
   .tile-desc { font-size: 13px; line-height: 1.45; color: var(--muted); }
   .tile-main { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
   .tile-main .tile-tag, .tile-main .tile-desc { color: var(--accent-ink); opacity: .78; }
-  .tile-main:hover:not(:disabled) { box-shadow: 5px 5px 0 0 var(--text); }
+  @media (hover: hover) { .tile-main:hover:not(:disabled) { box-shadow: 5px 5px 0 0 var(--text); } }
   @media (min-width: 620px) {
     .tiles { grid-template-columns: 1.25fr 1fr; }
     .tile-wide { grid-column: 1 / -1; }
@@ -211,12 +216,14 @@
 
   /* ---------- Réponses à choisir : une question à la fois ---------- */
   #guess-form .choices, #guess-form .picker, #guess-form .steps { display: none; }
-  #guess-form.choice .choices { display: grid; }
+  /* Room for two rows of answers from the start: nothing moves when they replace « Propositions en chargement… ». */
+  #guess-form.choice .choices { display: grid; min-height: 120px; align-content: start; }
   #guess-form.choice .picker { display: flex; }
   #guess-form.choice .steps { display: flex; }
   #guess-form.choice input.typed { display: none; }
   #guess-form.choice .row { grid-template-columns: 1fr; gap: 0; }
   #guess-form.choice [data-field].later { display: none; }
+  #guess-form.choice [data-field]:not(.later) { animation: fade .3s var(--ease-out) both; }
   #guess-form.choice:not(.years) .actions { display: none; }
   #guess-form.choice [data-field] > label { margin-top: 0; }
   #guess-form.choice .picker { margin-bottom: 14px; }
@@ -232,18 +239,24 @@
     font: 400 13px/1.25 var(--font-ui); text-align: left; padding: 10px 12px; border-radius: 0; min-height: 56px;
     background: transparent; color: var(--text); border: 1px solid var(--line-strong); overflow-wrap: anywhere;
     animation: rise .35s var(--ease-out) both;
+    transition: background .12s, color .12s, border-color .12s, opacity .25s, box-shadow .15s, transform .15s;
   }
   .choices button:nth-child(2) { animation-delay: 40ms; }
   .choices button:nth-child(3) { animation-delay: 80ms; }
   .choices button:nth-child(4) { animation-delay: 120ms; }
-  .choices button:hover:not(:disabled) { border-color: var(--text); box-shadow: 3px 3px 0 0 var(--accent); }
-  /* The answer: the right one lit, a wrong pick struck out, the others faded. */
+  @media (hover: hover) { .choices button:hover:not(:disabled) { border-color: var(--text); box-shadow: 3px 3px 0 0 var(--accent); } }
+  /* The answer: the right one lit (with a pop when it was the pick), a wrong pick shaken and struck out, the others faded. */
   .choices button:disabled { opacity: .35; cursor: default; }
   .choices button.right { opacity: 1; background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-  .choices button.wrong { opacity: 1; color: var(--ko); border-color: var(--ko); text-decoration: line-through; }
-  .picker { align-items: center; gap: 10px; flex-wrap: wrap; }
+  .choices button.right[aria-pressed="true"] { animation: pop .4s var(--spring); }
+  .choices button.wrong { opacity: 1; color: var(--ko); border-color: var(--ko); text-decoration: line-through; animation: shake .35s var(--ease-out); }
+  @keyframes fade { from { opacity: 0; } }
+  @keyframes pop { 40% { transform: scale(1.05); } }
+  @keyframes shake { 20%, 60% { transform: translateX(-5px); } 40%, 80% { transform: translateX(5px); } }
+  .picker { align-items: center; gap: 10px; flex-wrap: wrap; -webkit-user-select: none; user-select: none; }
   .picker output { font: 900 30px var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; min-width: 2.6em; text-align: center; font-variant-numeric: tabular-nums; }
   .picker button { font: 400 18px var(--font-ui); width: 44px; height: 44px; padding: 0; border-radius: 0; background: transparent; color: var(--text); border: 1px solid var(--line-strong); }
+  .picker button:active { background: var(--line); transition: none; }
   .picker input[type="range"] { flex: 1 1 100%; padding: 0; border: 0; box-shadow: none; accent-color: var(--accent); height: 32px; }
   @media (max-width: 300px) { .choices { grid-template-columns: 1fr; } }
 
@@ -303,7 +316,7 @@
   button.pick .status { display: block; margin: 2px 0 0; font-size: 11px; }
   .avatar.list-icon { border-radius: 0; color: var(--accent); }
   img.avatar.list-icon { object-fit: cover; }
-  button.pick:hover:not(:disabled) { border-color: var(--text); box-shadow: 3px 3px 0 0 var(--accent); }
+  @media (hover: hover) { button.pick:hover:not(:disabled) { border-color: var(--text); box-shadow: 3px 3px 0 0 var(--accent); } }
   .room-chosen { font-size: 15px; margin: 0 0 6px; }
   #room-music-chosen .back { margin: 0; }
   .room-chosen-actions { display: flex; flex-wrap: wrap; gap: 6px 18px; }
@@ -330,7 +343,7 @@
   .rg-songs button .status { margin: 0; font-size: 11px; }
   .rg-owners button[aria-pressed="true"], .rg-songs button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); opacity: 1; }
   .rg-songs button[aria-pressed="true"] .status { color: var(--bg); }
-  .rg-owners button:hover:not(:disabled) { border-color: var(--text); box-shadow: 3px 3px 0 0 var(--accent); }
+  @media (hover: hover) { .rg-owners button:hover:not(:disabled) { border-color: var(--text); box-shadow: 3px 3px 0 0 var(--accent); } }
   .rg-owners button:disabled, .rg-songs button:disabled { opacity: .45; cursor: default; }
   .rg-answered { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
   .rg-faces { display: flex; }
