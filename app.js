@@ -265,42 +265,61 @@ async function loadSource(force = false) {
 const DEFAULT_FIELDS = ['artist', 'title'];
 const LABELS = { artist: 'Artiste', title: 'Titre', album: 'Album', year: 'Sortie', added: 'Ajouté en', discovered: 'Découvert en' };
 
-/* ---------- Réponses à choisir ---------- */
+/* ---------- Réponses à choisir : une question à la fois ---------- */
 
+// The questions come one by one, in this order: once the artist is answered, four titles (or albums)
+// of that same artist give nothing away, and that is what keeps them hard. The years come last, together.
 const TEXT_FIELDS = ['artist', 'title', 'album'];
 const YEAR_PROPS = { year: 'releaseYear', added: 'addedYear', discovered: 'firstYear' };
+const ANSWER_PAUSE = 900; // how long the right answer stays on screen before the next question
+const EXTRAS_WAIT = 4000; // how long a question waits for Deezer before making do with the player's music
 const choiceMode = () => game?.answers === 'choice';
 const sameText = (a, b) => Scoring.norm(a) === Scoring.norm(b);
+const shown = (v) => Scoring.clean(v) || v || '';
 
 function answerText(field, t) {
   if (field === 'artist') return t.artists.join(', ');
-  const v = field === 'title' ? t.name : t.album;
-  return Scoring.clean(v) || v || '';
+  return shown(field === 'title' ? t.name : t.album);
 }
 
-// Wrong answers come from the player's own music, and from the same artist first: that is what keeps it hard.
-function buildOptions(field, t) {
+// The round being answered: its questions, where the player is, what they got right.
+let quiz = null;
+
+// What the title and album questions need from Deezer: the album of a history track (to know the answer),
+// the artist's best-known titles and their albums. Each request is made once, so asking again is free.
+function choiceExtras(t) {
+  const ready = game.engine === 'deezer' ? Deezer.resolve(t) : Promise.resolve(true);
+  return ready.then(async (found) => {
+    if (!found) return {};
+    const [top, albums] = await Promise.all([
+      game.fields.includes('title') ? Deezer.artist.top(t.artists[0], t.artistId).catch(() => []) : [],
+      game.fields.includes('album') ? Deezer.album.ofArtist(t.artists[0], t.artistId).catch(() => []) : [],
+    ]);
+    return { top, albums: albums.map((a) => a.title) };
+  });
+}
+
+// The right answer and three wrong ones. Wrong titles and albums are the same artist's: the player's own
+// first, then Deezer's best known, other artists only when the artist has too few.
+function buildOptions(field, t, extras = {}) {
   const right = answerText(field, t);
   if (!right) return null;
   const byArtist = (x) => x !== t && x.artists.some((a) => t.artists.some((b) => sameText(a, b)));
-  const others = game.library.filter((x) => x !== t && !byArtist(x));
-  const sameArtist = shuffle(game.library.filter(byArtist)).map((x) => answerText(field, x));
-  // Albums the player has not met yet are padded with the artist's discography (an imported history knows no album).
-  const discography = field === 'album' ? shuffle((t.discography || []).map((a) => Scoring.clean(a))) : [];
+  const others = shuffle(game.library.filter((x) => x !== t && !byArtist(x)));
   // Several artists to find: the wrong answers list several too, keeping one of the real ones,
   // so the right answer is not simply the only one with a comma.
   const several = (x, i) => (x.artists.length > 1 ? x.artists.join(', ')
     : (i % 2 ? [t.artists[0], x.artists[0], ...t.artists.slice(2)] : [x.artists[0], ...t.artists.slice(1)]).join(', '));
-  const elsewhere = shuffle(others).map((x) => answerText(field, x));
-  // When the artist is asked too, four titles (or albums) of one artist would give it away: the wrong ones
-  // then come from other artists, the artist's own only when there are too few of them.
-  const artistAsked = game.fields.includes('artist');
-  const pool = field === 'artist'
-    ? shuffle(others).map((x, i) => (t.artists.length > 1 ? several(x, i) : x.artists[0]))
-    : artistAsked ? [...elsewhere, ...sameArtist, ...discography] : [...sameArtist, ...discography, ...elsewhere];
+  const mine = shuffle(game.library.filter(byArtist)).map((x) => answerText(field, x));
+  const elsewhere = others.map((x) => answerText(field, x));
+  // Deezer's lists put the best known first (and albums before EPs and singles): those, in a new order each time.
+  const known = (list = [], head) => [...shuffle(list.slice(0, head)), ...list.slice(head)].map(shown);
+  const pools = field === 'artist' ? [others.map((x, i) => (t.artists.length > 1 ? several(x, i) : x.artists[0]))]
+    : field === 'title' ? [mine, known(extras.top, 15), elsewhere]
+    : [mine, known(extras.albums, 10), elsewhere];
   const seen = new Set([Scoring.norm(right)]);
   const wrong = [];
-  for (const c of pool) {
+  for (const c of pools.flat()) {
     if (wrong.length === 3) break;
     const k = Scoring.norm(c);
     if (!k || seen.has(k)) continue;
@@ -310,37 +329,81 @@ function buildOptions(field, t) {
   return shuffle([right, ...wrong]);
 }
 
-function nextOpenField(from) {
-  const open = [...document.querySelectorAll('#guess-form [data-field]:not(.hidden)')]
-    .filter((d) => TEXT_FIELDS.includes(d.dataset.field) && !d.querySelector('input.typed').value);
-  return open.find((d) => d.compareDocumentPosition(from) & Node.DOCUMENT_POSITION_PRECEDING) || open[0];
+function startQuiz(t) {
+  const asked = TEXT_FIELDS.filter((f) => game.fields.includes(f));
+  const years = Object.keys(YEAR_PROPS).filter((f) => game.fields.includes(f));
+  quiz = { track: t, steps: [...asked, ...(years.length ? ['years'] : [])], years, at: 0, marks: {}, options: {}, busy: false };
+  const fromDeezer = asked.some((f) => f !== 'artist');
+  quiz.extras = fromDeezer ? choiceExtras(t) : Promise.resolve({});
+  // The next track's, while this one is played.
+  const next = game.tracks[game.index + 1];
+  if (fromDeezer && next) quiz.extras.then(() => choiceExtras(next)).catch(() => {});
+  showStep();
 }
 
-function pick(field, value, container) {
-  $(`#g-${field}`).value = value;
-  for (const b of container.children) b.setAttribute('aria-pressed', String(b.textContent === value));
-  const next = nextOpenField(container);
-  const firstYear = document.querySelector('#guess-form [data-field]:not(.hidden) .picker');
-  // With only picks to make, the last tap validates; with years to set, go to the first one.
-  if (next) next.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  else if (!firstYear) $('#guess-form').requestSubmit();
-  else firstYear.scrollIntoView({ behavior: 'smooth', block: 'center' });
-}
+// Still the question on screen: not replaced by another round, a result or another screen.
+const onScreen = (q) => quiz === q && currentScreen() === 'screen-round' && $('#result').classList.contains('hidden');
 
-function renderChoices(t) {
-  t.options ??= {};
-  for (const field of TEXT_FIELDS) {
-    if (!game.fields.includes(field)) continue;
-    // Rebuilt while incomplete: the album and the discography arrive once Deezer has answered.
-    if (!(t.options[field]?.length >= 4)) t.options[field] = buildOptions(field, t);
-    const box = document.querySelector(`.choices[data-for="${field}"]`);
-    const chosen = $(`#g-${field}`).value;
-    box.replaceChildren(...(t.options[field] || []).map((o) => el('button', {
-      type: 'button', textContent: o, onclick: () => pick(field, o, box),
-    }, [])));
-    for (const b of box.children) b.setAttribute('aria-pressed', String(!!chosen && b.textContent === chosen));
-    if (!t.options[field]) box.append(el('p', { className: 'status', textContent: 'Propositions en chargement…' }));
+function showStep() {
+  const q = quiz;
+  const step = q.steps[q.at];
+  for (const d of document.querySelectorAll('#guess-form [data-field]')) {
+    d.classList.toggle('later', step === 'years' ? !q.years.includes(d.dataset.field) : d.dataset.field !== step);
   }
+  $('#guess-form').classList.toggle('years', step === 'years');
+  renderSteps();
+  if (step !== 'years') renderOptions(step);
+}
+
+function renderSteps() {
+  const q = quiz;
+  const name = (s) => (s !== 'years' ? LABELS[s] : q.years.length > 1 ? 'Années' : label(q.years[0]));
+  $('#steps').classList.toggle('hidden', q.steps.length < 2);
+  $('#steps').replaceChildren(...q.steps.map((s, i) => el('li', {
+    className: s in q.marks ? (q.marks[s] ? 'ok' : 'ko') : i === q.at ? 'now' : '',
+    textContent: name(s),
+  })));
+}
+
+async function renderOptions(field) {
+  const q = quiz;
+  const box = document.querySelector(`.choices[data-for="${field}"]`);
+  if (!q.options[field]) {
+    box.replaceChildren(el('p', { className: 'status', textContent: 'Propositions en chargement…' }));
+    // A history track's album is only known once Deezer has found the track: that one is worth waiting for.
+    // Not found, the track is replaced (see replay).
+    if (field === 'album' && game.engine === 'deezer' && !(await Deezer.resolve(q.track))) return;
+    const extras = field === 'artist' ? {} : await Promise.race([q.extras.catch(() => ({})), sleep(EXTRAS_WAIT).then(() => ({}))]);
+    if (!onScreen(q) || q.steps[q.at] !== field) return;
+    q.options[field] ??= buildOptions(field, q.track, extras);
+  }
+  // No answer to find (an album Deezer does not know): on to the next question, as a miss.
+  if (!q.options[field]) { advance(q); return; }
+  box.replaceChildren(...q.options[field].map((o) => el('button', { type: 'button', textContent: o, onclick: () => choose(field, o) })));
+}
+
+// One try: the answer is kept, the right one shown, and the next question comes on its own.
+function choose(field, value) {
+  const q = quiz;
+  if (q.busy || q.steps[q.at] !== field) return;
+  q.busy = true;
+  $(`#g-${field}`).value = value;
+  const right = answerText(field, q.track);
+  q.marks[field] = sameText(value, right);
+  for (const b of document.querySelector(`.choices[data-for="${field}"]`).children) {
+    b.disabled = true;
+    b.setAttribute('aria-pressed', String(b.textContent === value));
+    b.classList.toggle('right', sameText(b.textContent, right));
+    b.classList.toggle('wrong', b.textContent === value && !q.marks[field]);
+  }
+  renderSteps();
+  setTimeout(() => { q.busy = false; if (onScreen(q)) advance(q); }, ANSWER_PAUSE);
+}
+
+function advance(q) {
+  q.at++;
+  if (q.at < q.steps.length) showStep();
+  else $('#guess-form').requestSubmit();
 }
 
 // Years are picked on a slider, still scored by how close they are. Nothing counts until it is touched.
@@ -619,17 +682,17 @@ async function startRound() {
   $('#stage-num').replaceChildren(num, ...(sudden ? [] : [el('small', { textContent: `/${game.tracks.length}` })]));
   $('#round-error').textContent = '';
   $('#guess-form').reset();
-  $('#label-artist').textContent = t.artists.length > 1
-    ? `Artistes (${t.artists.length} attendus, séparés par des virgules)`
-    : 'Artiste';
+  $('#label-artist').textContent = t.artists.length < 2 ? 'Artiste'
+    : choiceMode() ? `Artistes (${t.artists.length})`
+    : `Artistes (${t.artists.length} attendus, séparés par des virgules)`;
   $('#label-added').textContent = game.addedNames[0];
   for (const d of document.querySelectorAll('#guess-form [data-field]')) {
     d.classList.toggle('hidden', !game.fields.includes(d.dataset.field));
   }
   $('#guess-form').classList.toggle('choice', choiceMode());
-  if (choiceMode()) { resetPickers(); renderChoices(t); }
   $('#guess-form').classList.remove('hidden');
   $('#result').classList.add('hidden');
+  if (choiceMode()) { resetPickers(); startQuiz(t); }
   $('#btn-skip').classList.toggle('hidden', !freeSkip());
   // No keyboard popping up when answers are picked.
   if (!choiceMode()) $('#guess-form [data-field]:not(.hidden) input').focus();
@@ -646,14 +709,6 @@ async function replay() {
     if (currentTrack() !== t) return;
     // Not the player's fault: a track missing on Deezer is replaced silently, in every mode.
     if (!found) { skip(); return; }
-    // The album of a history track is only known once Deezer has found it.
-    if (choiceMode() && $('#result').classList.contains('hidden')) renderChoices(t);
-    if (choiceMode() && game.fields.includes('album') && !game.fields.includes('artist') && !t.discography) {
-      Deezer.album.ofArtist(t.artists[0], t.artistId).catch(() => []).then((list) => {
-        t.discography = list.map((a) => a.title);
-        if (currentTrack() === t && $('#result').classList.contains('hidden')) renderChoices(t);
-      });
-    }
     Deezer.resolve(game.tracks[game.index + 1]);
   }
   const snippet = () => ($('#result').classList.contains('hidden') ? game.snippetMs : 0);
@@ -680,6 +735,8 @@ const label = (k) => (k === 'added' ? game.addedNames[1] : LABELS[k]);
 
 function submitGuess(e) {
   e.preventDefault();
+  // Picked answers are sent by the last question (or the years' button), never halfway.
+  if (choiceMode() && quiz && quiz.at < quiz.steps.length && quiz.steps[quiz.at] !== 'years') return;
   const t = currentTrack();
   const guess = {
     artist: $('#g-artist').value, title: $('#g-title').value, album: $('#g-album').value,

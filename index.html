@@ -209,19 +209,38 @@
   .badge.ko { border: 1px solid var(--line-strong); color: var(--ko); }
   .guess { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
-  /* ---------- Réponses à choisir ---------- */
-  #guess-form .choices, #guess-form .picker { display: none; }
+  /* ---------- Réponses à choisir : une question à la fois ---------- */
+  #guess-form .choices, #guess-form .picker, #guess-form .steps { display: none; }
   #guess-form.choice .choices { display: grid; }
   #guess-form.choice .picker { display: flex; }
+  #guess-form.choice .steps { display: flex; }
   #guess-form.choice input.typed { display: none; }
-  #guess-form.choice .row { grid-template-columns: 1fr; }
+  #guess-form.choice .row { grid-template-columns: 1fr; gap: 0; }
+  #guess-form.choice [data-field].later { display: none; }
+  #guess-form.choice:not(.years) .actions { display: none; }
+  #guess-form.choice [data-field] > label { margin-top: 0; }
+  #guess-form.choice .picker { margin-bottom: 14px; }
+  #guess-form.choice .actions { margin-top: 10px; }
+  .steps { list-style: none; margin: 0 0 16px; padding: 0; gap: 6px 16px; flex-wrap: wrap; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .steps li { margin: 0; padding-bottom: 3px; border-bottom: 2px solid transparent; transition: color .2s, border-color .2s; }
+  .steps li.now { color: var(--text); border-color: var(--accent); }
+  .steps li.ok { color: var(--accent); }
+  .steps li.ok::after { content: " ✓"; }
+  .steps li.ko { color: var(--ko); text-decoration: line-through; }
   .choices { grid-template-columns: 1fr 1fr; gap: 8px; }
   .choices button {
     font: 400 13px/1.25 var(--font-ui); text-align: left; padding: 10px 12px; border-radius: 0; min-height: 56px;
     background: transparent; color: var(--text); border: 1px solid var(--line-strong); overflow-wrap: anywhere;
+    animation: rise .35s var(--ease-out) both;
   }
+  .choices button:nth-child(2) { animation-delay: 40ms; }
+  .choices button:nth-child(3) { animation-delay: 80ms; }
+  .choices button:nth-child(4) { animation-delay: 120ms; }
   .choices button:hover:not(:disabled) { border-color: var(--text); box-shadow: 3px 3px 0 0 var(--accent); }
-  .choices button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+  /* The answer: the right one lit, a wrong pick struck out, the others faded. */
+  .choices button:disabled { opacity: .35; cursor: default; }
+  .choices button.right { opacity: 1; background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .choices button.wrong { opacity: 1; color: var(--ko); border-color: var(--ko); text-decoration: line-through; }
   .picker { align-items: center; gap: 10px; flex-wrap: wrap; }
   .picker output { font: 900 30px var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; min-width: 2.6em; text-align: center; font-variant-numeric: tabular-nums; }
   .picker button { font: 400 18px var(--font-ui); width: 44px; height: 44px; padding: 0; border-radius: 0; background: transparent; color: var(--text); border: 1px solid var(--line-strong); }
@@ -800,7 +819,7 @@
     <p id="mode-hint" class="status hidden">Tu continues tant que tu trouves l'artiste ou le titre. Une erreur et c'est fini.</p>
     <label for="opt-answers">Réponses</label>
     <select id="opt-answers">
-      <option value="choice">À choisir : 4 propositions</option>
+      <option value="choice">À choisir : une question à la fois, 4 propositions</option>
       <option value="type">À taper : il faut tout écrire</option>
     </select>
     <label for="opt-source">Titres à deviner</label>
@@ -962,6 +981,7 @@
     </div>
     <div class="card round-play">
       <form id="guess-form" autocomplete="off">
+        <ol id="steps" class="steps" aria-label="Questions"></ol>
         <div class="row">
           <div data-field="artist"><label for="g-artist" id="label-artist" style="margin-top:0">Artiste</label><input class="typed" id="g-artist"></div>
           <div data-field="title"><label for="g-title" style="margin-top:0">Titre</label><input class="typed" id="g-title"></div>
