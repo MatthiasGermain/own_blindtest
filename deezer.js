@@ -223,6 +223,7 @@ const Deezer = (() => {
   }
   const discographies = new Map();
   const tops = new Map();
+  const rawTops = new Map();
   const artistIds = new Map();
   // By Deezer id when known: a search by name often finds a namesake instead.
   const artistKey = (name, id) => (id ? `id:${id}` : `name:${Scoring.norm(name)}`);
@@ -235,15 +236,102 @@ const Deezer = (() => {
     return (same[0] || res.data?.[0])?.id || null;
   });
 
+  // An artist's best-known tracks as Deezer sends them, every credited artist included, fetched once.
+  const topOf = (id) => once(rawTops, String(id), async () => (await call(`/artist/${id}/top?limit=100`)).data || []);
+
   const artistCatalog = {
     // The artist's best-known titles, the most played first, fetched once.
     top: (name, id = null) => once(tops, artistKey(name, id), async () => {
       const artist = id || await artistIdOf(name);
-      if (!artist) return [];
-      const res = await call(`/artist/${artist}/top?limit=50`);
-      return (res.data || []).map((d) => d.title_short || d.title).filter(Boolean);
+      return artist ? (await topOf(artist)).map((d) => d.title_short || d.title).filter(Boolean) : [];
     }),
+    // Artists by name, for the suggestions under a text field.
+    async search(q, limit = 6) {
+      const res = await call(`/search/artist?q=${encodeURIComponent(q)}&limit=${limit}`);
+      return (res.data || []).map(artistOf);
+    },
+    // The artist a typed name means: that exact name (the one with the most fans), or a close first answer.
+    // Null when Deezer knows no one by that name.
+    async find(name) {
+      const wanted = Scoring.norm(name);
+      if (!wanted) return null;
+      const res = await call(`/search/artist?q=${encodeURIComponent(name)}&limit=10`);
+      const list = res.data || [];
+      const same = list.filter((a) => Scoring.norm(a.name) === wanted).sort((a, b) => (b.nb_fan || 0) - (a.nb_fan || 0));
+      const hit = same[0] || (list[0] && Scoring.similarity(Scoring.norm(list[0].name), wanted) >= 0.75 ? list[0] : null);
+      return hit ? artistOf(hit) : null;
+    },
+    get: async (id) => artistOf(await call(`/artist/${id}`)),
+    // The artists who share one of an artist's best-known tracks, with that track: [{ id, name, track }].
+    async partners(artist) {
+      const out = new Map();
+      for (const d of await topOf(artist.id)) {
+        // One artist at a time: « Booba & Kaaris » is offered as Kaaris.
+        for (const p of namesOf(d)) {
+          if (pieces(p.name).length < 2 && !sameArtist(p, artist) && !out.has(Scoring.norm(p.name))) out.set(Scoring.norm(p.name), { id: p.id, name: p.name, track: proofOf(d) });
+        }
+      }
+      return [...out.values()];
+    },
+    // A track on which both artists are credited, or null: the proof of a featuring.
+    async collab(a, b) {
+      const both = (d) => { const names = namesOf(d); return names.some((n) => sameArtist(n, a)) && names.some((n) => sameArtist(n, b)); };
+      // Their best-known tracks first: every artist of a track is credited there.
+      const tops = await Promise.all([a, b].filter((x) => x.id).map((x) => topOf(x.id).catch(() => [])));
+      let hit = tops.flat().find(both);
+      if (hit) return proofOf(hit);
+      // Then a search for both names: a featured artist is in the title (« Titre (feat. X) »)…
+      const res = await call(`/search?q=${encodeURIComponent(`${strip(a.name)} ${strip(b.name)}`)}&limit=50`).catch(() => ({}));
+      const found = (res.data || []).filter((d) => d.readable !== false);
+      hit = found.find(both);
+      if (hit) return proofOf(hit);
+      // … or only in the credits (a duo, a joint album): those are read on a few of the two artists' tracks.
+      const theirs = found.filter((d) => [a, b].some((x) => sameArtist({ id: d.artist?.id, name: d.artist?.name }, x))).slice(0, 6);
+      const full = await Promise.all(theirs.map((d) => call(`/track/${d.id}`).catch(() => null)));
+      hit = full.find((d) => d && both(d));
+      return hit ? proofOf(hit) : null;
+    },
   };
 
-  return { resolve, refresh, player, profile, album: albumCatalog, artist: artistCatalog };
+  /* ---------- Featurings: « Feat sur feat » ---------- */
+
+  const artistOf = (a) => ({ id: a.id ? String(a.id) : null, name: a.name || '', picture: a.picture_medium || '', fans: a.nb_fan || 0 });
+
+  // "Booba & Kaaris", "Dua Lipa, DaBaby": a duo credited as one artist counts as each of them too.
+  const pieces = (name) => String(name || '').split(/\s*(?:,|&|\/|\bx\b|\bfeat\.?|\bft\.?|\bwith\b)\s*/i).map((n) => n.trim()).filter(Boolean);
+
+  // Every artist of a track: the main one, the credited ones (on full tracks and top tracks), the featured ones
+  // of the title. part: one of a duo's names, not shown on its own.
+  function namesOf(d) {
+    const out = [];
+    const add = (name, id = null) => {
+      if (!name) return;
+      const parts = pieces(name);
+      for (const n of [name, ...(parts.length > 1 ? parts : [])]) {
+        if (!out.some((x) => Scoring.norm(x.name) === Scoring.norm(n))) out.push({ id: n === name && id ? String(id) : null, name: n, part: n !== name });
+      }
+    };
+    add(d.artist?.name, d.artist?.id);
+    for (const c of d.contributors || []) add(c.name, c.id);
+    for (const n of artistsOf(d).slice(1)) add(n);
+    return out;
+  }
+
+  // The same artist: the same Deezer id, or the same name give or take a typo (Deezer has a few artists twice).
+  function sameArtist(x, y) {
+    if (x.id && y.id && String(x.id) === String(y.id)) return true;
+    const a = Scoring.norm(x.name);
+    const b = Scoring.norm(y.name);
+    return !!a && (a === b || (Math.min(a.length, b.length) >= 4 && Scoring.similarity(a, b) >= 0.88));
+  }
+
+  const proofOf = (d) => ({
+    id: String(d.id),
+    title: d.title_short || d.title || '',
+    artists: namesOf(d).filter((n) => !n.part).map((n) => n.name),
+    preview: d.preview || '',
+    cover: d.album?.cover_medium || d.album?.cover_big || '',
+  });
+
+  return { resolve, refresh, player, profile, album: albumCatalog, artist: artistCatalog, sameArtist };
 })();

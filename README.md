@@ -4,11 +4,12 @@
 
 **Un blindtest sur ta propre musique.** Tu choisis d'où vient ta musique, tu écoutes un extrait, tu trouves l'artiste, le titre, l'album, l'année. Ensuite tu défies tes potes sur tes goûts.
 
-Trois jeux :
+Quatre jeux :
 
 - **Blindtest** : un extrait, et tu trouves l'artiste, le titre, l'album, l'année.
 - **Pochette surprise** : une pochette de tes albums, pixelisée, de plus en plus nette à chaque essai.
 - **Qui écoute ça ?** : à plusieurs, chacun sur son téléphone, chacun apporte 15 titres ; à qui est l'extrait ?
+- **Feat sur feat** : un artiste de ta musique ; qui a fait un feat avec lui ? Puis avec le suivant, et ainsi de suite.
 
 👉 **Jouer : https://matthiasgermain.github.io/own_blindtest/**
 
@@ -32,6 +33,7 @@ Avec Deezer et le fichier, le son vient des extraits Deezer de 30 secondes. Avec
 - **Deux façons de répondre.** *À choisir* (par défaut sur téléphone) : une question à la fois, artiste puis titre puis album, avec 4 propositions et un seul essai. Une fois l'artiste passé, les titres et albums proposés sont tous les siens, d'abord ceux de ta musique : il faut vraiment reconnaître le morceau. Les années viennent à la fin, sur un curseur. *À taper* : il faut tout écrire, les fautes de frappe sont tolérées.
 - **Des questions qui dépendent de la source.** Artiste, titre, album, année de sortie, année où tu l'as liké, année où tu l'as découvert.
 - **Partage et défis.** Ton résultat se partage en carrés (🟧 tout bon, 🟫 en partie, ⬛ raté). Le lien contient la partie complète : ton pote rejoue les mêmes titres et doit battre ton score, sans compte.
+- **Feat sur feat.** Un jeu à part sur l'accueil, en solo : tu choisis ta musique (profil Deezer ou historique), le jeu part d'un artiste que tu écoutes. Tu tapes un artiste qui a fait un featuring avec lui, il devient le suivant, et ainsi de suite : 30 secondes par feat, jamais deux fois le même artiste. Deezer arbitre (un feat compte quand un titre crédite les deux artistes) et le titre trouvé se fait entendre. À la fin, la chaîne, ce que tu aurais pu dire, et un lien pour défier un pote depuis le même artiste. Pas de Spotify ici : ses règles pour les développeurs interdisent les jeux.
 - **Pochette surprise.** Un jeu à part sur l'accueil : tu choisis ta musique (profil Deezer, historique ou Spotify), puis 5 pochettes de tes albums, 6 essais chacune. Chaque essai rend la pochette plus nette et donne un indice : l'année, le genre, les initiales de l'artiste, puis un extrait de 5 secondes. Mêmes carrés à partager (🟧 trouvé, 🟫 bon artiste, ⬛ raté), avec un lien vers les mêmes pochettes.
 - **Qui écoute ça ?** Un extrait passe sur chaque téléphone (ou seulement sur celui de l'hôte si tout le monde est dans la même pièce), avec un décompte 3, 2, 1 en option. Chacun devine à qui est le titre et lequel c'est ; la révélation montre qui a voté pour qui, puis un podium avec des titres (« Le plus prévisible », « Âmes sœurs musicales »…).
 
@@ -84,11 +86,12 @@ index.html     écrans, styles (DA « Disco grain »)
 util.js        petits outils communs ($, stockage, mélange, partage)
 app.js         écrans, bouton retour, sources, blindtest solo, partage et défis, accueil
 spotify.js     connexion Spotify (OAuth PKCE), API avec pauses en cas de blocage, lecteur Premium
-deezer.js      API publique Deezer (JSONP), profils, albums, titres phares d'un artiste, lecteur d'extraits
+deezer.js      API publique Deezer (JSONP), profils, albums, titres phares et featurings d'un artiste, lecteur d'extraits
 history.js     lecture des exports Spotify et YouTube Music (ZIP ou JSON)
 scoring.js     barème (textes tolérants, années, artistes multiples)
 challenge.js   liens de défi du blindtest (JSON compressé dans l'URL)
 cover.js       « Pochette surprise » : choix de la musique, pochettes pixelisées, indices, défis (#p=…)
+feat.js        « Feat sur feat » : choix de la musique, artiste de départ, chrono, vérification des feats, défis (#f=…)
 room.js        salles « Qui écoute ça ? » : créer, rejoindre, salon, musique de chacun, manches
 stats.js       mesure d'audience sans cookies (Umami ou GoatCounter)
 config.js      Client ID Spotify, mesure d'audience, adresse du serveur des salles
@@ -140,4 +143,5 @@ Le site est servi par GitHub Pages depuis `main`. Avant chaque mise en ligne, **
 - accueil et sources : `source-ouverte`, `deezer-connecte`, `historique-importe`, `spotify-connexion`, `spotify-refuse`, `spotify-bloque`, `erreur-source`, `lien-auteur` ;
 - blindtest : `partie-lancee`, `partie-finie`, `partie-abandonnee`, `partage`, `defi-ouvert` ;
 - Pochette surprise : `pochette-lancee`, `pochette-finie`, `pochette-partage`, `pochette-defi-ouvert` ;
+- Feat sur feat : `feat-lancee`, `feat-finie`, `feat-partage`, `feat-defi-ouvert` ;
 - salles : `salle-creee`, `salle-rejointe`, `salle-musique`, `salle-retirage`, `salle-lancee`, `salle-finie`.
