@@ -1,5 +1,7 @@
 # Blindtest
 
+![Blindtest : un extrait de tes morceaux, trouve l'artiste, le titre, l'album, puis défie tes potes](og.jpg)
+
 **Un blindtest sur ta propre musique.** Tu choisis d'où vient ta musique, tu écoutes un extrait, tu trouves l'artiste, le titre, l'album, l'année. Ensuite tu défies tes potes sur tes goûts.
 
 Trois jeux :
@@ -33,6 +35,26 @@ Avec Deezer et le fichier, le son vient des extraits Deezer de 30 secondes. Avec
 - **Pochette surprise.** Un jeu à part sur l'accueil : tu choisis ta musique (profil Deezer, historique ou Spotify), puis 5 pochettes de tes albums, 6 essais chacune. Chaque essai rend la pochette plus nette et donne un indice : l'année, le genre, les initiales de l'artiste, puis un extrait de 5 secondes. Mêmes carrés à partager (🟧 trouvé, 🟫 bon artiste, ⬛ raté), avec un lien vers les mêmes pochettes.
 - **Qui écoute ça ?** Un extrait passe sur chaque téléphone (ou seulement sur celui de l'hôte si tout le monde est dans la même pièce), avec un décompte 3, 2, 1 en option. Chacun devine à qui est le titre et lequel c'est ; la révélation montre qui a voté pour qui, puis un podium avec des titres (« Le plus prévisible », « Âmes sœurs musicales »…).
 
+## Comment ça marche
+
+```mermaid
+flowchart LR
+  subgraph nav["Ton navigateur, sur téléphone ou ordinateur"]
+    site["Site du jeu<br/>JavaScript, sans dépendance"]
+    hist["Ton historique<br/>ZIP ou JSON, lu sur place"] --> site
+    defi["Lien de défi<br/>la partie, dans l'adresse"] --> site
+  end
+  site -->|profils, extraits de 30 s| deezer["API Deezer"]
+  site -->|connexion OAuth PKCE, lecteur| spotify["API Spotify"]
+  site <-->|WebSocket, seulement à plusieurs| salles["Serveur des salles<br/>Worker Cloudflare, un Durable Object par salle"]
+```
+
+- **Un site statique.** Quelques fichiers HTML, CSS et JavaScript servis par GitHub Pages, sans dépendance ni étape de build.
+- **En solo, tout se passe dans ton navigateur.** Deezer est appelé en JSONP (son API refuse les appels depuis un autre site), Spotify par une connexion OAuth PKCE, sans serveur. Ton historique est ouvert sur place.
+- **Une correction tolérante.** Les réponses sont simplifiées (minuscules, sans accents ni ponctuation), les mentions de version sont retirées (« (feat. X) », « - Remastered »), puis comparées à la bonne réponse : 80 % de ressemblance ou plus vaut 10 points, 55 % ou plus 5 points.
+- **Les défis tiennent dans le lien.** La partie est compressée dans l'adresse ; à l'ouverture, chaque valeur est vérifiée et bornée, puisque le lien peut venir de n'importe qui.
+- **À plusieurs, le serveur arbitre.** Il tire les manches, garde les réponses secrètes jusqu'à la révélation, chronomètre et compte les points. Les règles sont des fonctions pures, testées par une partie simulée à trois joueurs.
+
 ## Vie privée
 
 En solo, tout se passe dans le navigateur : pas de compte, pas de serveur, et ton historique ne quitte jamais ton appareil. Seule exception, les salles « Qui écoute ça ? » : les 15 titres que tu y apportes (artiste, titre, album, pochette) et ton pseudo passent par le serveur des salles, qui les efface 2 heures après la dernière partie lancée. La mesure d'audience, si elle est activée, n'utilise aucun cookie et ne reçoit que des faits de partie (source, mode, tranche de score), jamais un nom, un profil ou un titre.
@@ -44,6 +66,7 @@ En solo, tout se passe dans le navigateur : pas de compte, pas de serveur, et to
 Conçu et développé par **Matthias Germain**.
 
 - Portfolio : https://matthias-germain.vercel.app
+- Présentation détaillée du projet : https://matthias-germain.vercel.app/projets/blindtest
 - GitHub : https://github.com/MatthiasGermain
 
 Une idée, un bug ? Ouvre une [issue](https://github.com/MatthiasGermain/own_blindtest/issues).
