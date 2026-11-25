@@ -435,6 +435,34 @@
   .cv-title { font-size: clamp(26px, 7vw, 40px); line-height: 1.05; margin: 0 0 4px; }
   .cv-verdict { font: 900 24px var(--font-display); font-variation-settings: "SOFT" 100, "WONK" 1; color: var(--accent); margin: 8px 0 0; }
   .cv-grid { white-space: pre-line; }
+
+  /* ---------- Feat sur feat ---------- */
+  #ft-game { max-width: 720px; margin: 0 auto; }
+  .ft-clock i { transition: width .1s linear, background .3s; }
+  .ft-clock i.late { background: var(--accent); }
+  .ft-now { display: flex; align-items: center; gap: 16px; margin: 4px 0 18px; min-height: 72px; }
+  .ft-now.enter > * { animation: rise .45s var(--ease-out) both; }
+  .ft-pic { width: 72px; height: 72px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line-strong); flex-shrink: 0; }
+  .ft-kicker { margin: 0; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .ft-artist { font-size: clamp(34px, 10vw, 60px); line-height: .95; letter-spacing: -0.02em; margin: 4px 0 0; overflow-wrap: anywhere; }
+  .ft-proof { display: flex; gap: 12px; align-items: center; margin: 0 0 16px; padding: 10px 12px; border: 1px solid var(--accent); background: rgba(255, 102, 20, .08); }
+  .ft-proof.enter { animation: rise .45s var(--ease-out) both; animation-delay: .1s; }
+  .ft-proof img { width: 44px; height: 44px; object-fit: cover; flex-shrink: 0; }
+  .ft-proof strong { display: block; font-weight: 500; overflow-wrap: anywhere; }
+  .ft-proof .status { display: block; margin: 0; font-size: 11px; }
+  .ft-play { margin-bottom: 16px; }
+  .ft-play.checking input { border-color: var(--line); color: var(--muted); }
+  .ft-suggest { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 4px; }
+  .ft-suggestion { width: 100%; display: flex; align-items: center; gap: 10px; text-align: left; padding: 6px 10px; background: transparent; color: var(--text); border: 1px solid var(--line); border-radius: 0; font: 400 14px var(--font-ui); box-shadow: none; }
+  .ft-suggestion img, .ft-noface { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex-shrink: 0; background: var(--line); }
+  @media (hover: hover) { .ft-suggestion:hover { border-color: var(--text); box-shadow: 3px 3px 0 0 var(--accent); transform: none; } }
+  .ft-suggestion:focus-visible { border-color: var(--text); }
+  .ft-chain { list-style: none; padding: 0; margin: 0; }
+  .ft-chain li { display: grid; gap: 2px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; }
+  .ft-chain li:first-child { animation: rise .45s var(--ease-out) both; }
+  .ft-chain .status { margin: 0; font-size: 11px; }
+  .ft-leave { display: flex; justify-content: center; gap: 24px; }
+  #ft-end-missed { margin-top: 14px; }
   #cv-end .big { font-size: clamp(64px, 16vw, 96px); letter-spacing: -0.03em; }
 
   @media (min-width: 1024px) {
@@ -538,6 +566,8 @@
 
     <div class="challenge cv-dare hidden"><p class="challenge-title display"></p><p class="status" style="margin:0"></p><div class="actions"><button class="cv-dare-go" type="button">Relever le défi</button><button class="cv-dare-skip ghost" type="button">Ignorer</button></div><p class="status cv-dare-status" role="status"></p></div>
 
+    <div id="ft-dare" class="challenge hidden"><p class="challenge-title display"></p><p class="status" style="margin:0"></p><div class="actions"><button id="ft-dare-go" type="button">Relever le défi</button><button id="ft-dare-skip" class="ghost" type="button">Ignorer</button></div><p class="status" id="ft-dare-status" role="status"></p></div>
+
     <div id="home-pick">
       <h2 class="home-title">D'où vient ta musique ?</h2>
       <div class="tiles">
@@ -565,6 +595,11 @@
           <span class="tile-tag">Solo · sans le son</span>
           <span class="tile-name">Pochette surprise</span>
           <span class="tile-desc">Une pochette de tes albums, pixelisée, de plus en plus nette à chaque essai : tu la reconnais ?</span>
+        </button>
+        <button class="tile tile-wide" type="button" data-open="feat" style="--i: 5">
+          <span class="tile-tag">Nouveau · solo · à taper</span>
+          <span class="tile-name">Feat sur feat</span>
+          <span class="tile-desc">Un artiste de ta musique : qui a fait un feat avec lui ? Puis avec le suivant… 30 secondes par feat.</span>
         </button>
       </div>
       <p class="status home-note">Ta musique reste sur ton appareil. Seule exception : les 15 titres que tu apportes dans une salle.</p>
@@ -603,6 +638,24 @@
       </form>
       <ul class="room-dz-results" id="cv-dz-results"></ul>
       <p id="covers-status" class="status" role="status"></p>
+    </div>
+
+    <div class="card panel hidden" data-panel="feat">
+      <button class="back" type="button">← Retour</button>
+      <h2>Feat sur feat</h2>
+      <p>On part d'un artiste de ta musique. Tape un artiste qui a fait un featuring avec lui : il devient le suivant, et ainsi de suite. 30 secondes par feat, jamais deux fois le même artiste. Deezer arbitre, et chaque feat trouvé se fait entendre.</p>
+      <label>Avec quelle musique ?</label>
+      <div class="actions cv-sources" id="ft-sources">
+        <button id="ft-use-dz" class="hidden" type="button"></button>
+        <button id="ft-use-history" class="ghost hidden" type="button">Mon historique d'écoute</button>
+      </div>
+      <form id="ft-dz-form" class="join-row">
+        <label for="ft-dz-query" class="sr-only">Pseudo ou lien de ton profil Deezer</label>
+        <input id="ft-dz-query" placeholder="Ton pseudo ou ton lien Deezer" autocomplete="off" spellcheck="false">
+        <button type="submit" class="ghost">Chercher</button>
+      </form>
+      <ul class="room-dz-results" id="ft-dz-results"></ul>
+      <p id="ft-panel-status" class="status" role="status"></p>
     </div>
 
     <div class="card panel hidden" data-panel="deezer">
@@ -953,6 +1006,55 @@
     </div>
   </section>
 
+  <section id="screen-feat" class="screen hidden">
+    <div id="ft-game">
+      <div class="topbar">
+        <span>Feats <strong id="ft-count">0</strong></span>
+        <span>Temps <strong id="ft-time">30</strong></span>
+      </div>
+      <div class="progress ft-clock"><i id="ft-clock"></i></div>
+      <div id="ft-now" class="ft-now">
+        <img id="ft-pic" class="ft-pic hidden" alt="">
+        <div>
+          <p class="ft-kicker">Un feat avec</p>
+          <p id="ft-artist" class="ft-artist display"></p>
+        </div>
+      </div>
+      <div id="ft-proof" class="ft-proof hidden">
+        <img id="ft-proof-cover" alt="">
+        <div><strong id="ft-proof-title"></strong><span class="status" id="ft-proof-artists"></span></div>
+      </div>
+      <form id="ft-form" class="card ft-play" autocomplete="off">
+        <label for="ft-guess" style="margin-top:0">Qui a fait un feat avec <span id="ft-who"></span> ?</label>
+        <input id="ft-guess" placeholder="Nom d'un artiste" autocapitalize="words" autocomplete="off" spellcheck="false" enterkeyhint="go">
+        <ul class="ft-suggest" id="ft-suggest"></ul>
+        <p class="status" id="ft-status" role="status"></p>
+      </form>
+      <ol class="ft-chain" id="ft-chain"></ol>
+      <p class="round-quit ft-leave"><button id="ft-sound" class="quit" type="button">Couper le son</button><button id="ft-stop" class="quit" type="button">J'arrête là</button></p>
+    </div>
+    <div id="ft-end" class="card hidden">
+      <button id="ft-end-back" class="back" type="button">← Accueil</button>
+      <div class="end-body">
+        <div class="end-main">
+          <h2>Feat sur feat</h2>
+          <p class="big" id="ft-end-score"></p>
+          <p class="status" id="ft-end-detail"></p>
+          <p id="ft-end-verdict" class="verdict hidden"></p>
+          <p class="squares" id="ft-end-grid"></p>
+          <p class="status" id="ft-end-missed"></p>
+          <div class="actions">
+            <button id="ft-share" type="button">Partager et défier</button>
+            <button id="ft-again" class="ghost" type="button">Rejouer</button>
+            <button id="ft-settings" class="ghost" type="button">Changer de musique</button>
+          </div>
+          <p class="status" id="ft-share-feedback"></p>
+        </div>
+        <ol class="recap" id="ft-end-chain"></ol>
+      </div>
+    </div>
+  </section>
+
   <section id="screen-denied" class="card screen hidden">
     <button id="btn-denied-back" class="back" type="button">← Accueil</button>
     <h2>Compte non autorisé</h2>
@@ -1063,16 +1165,17 @@
   </footer>
 </main>
 <!-- Change ?v= on each release: a fresh page then never runs scripts kept in the browser cache. -->
-<script src="config.js?v=41"></script>
-<script src="util.js?v=41"></script>
-<script src="stats.js?v=41"></script>
-<script src="scoring.js?v=41"></script>
-<script src="challenge.js?v=41"></script>
-<script src="history.js?v=41"></script>
-<script src="deezer.js?v=41"></script>
-<script src="spotify.js?v=41"></script>
-<script src="room.js?v=41"></script>
-<script src="cover.js?v=41"></script>
-<script src="app.js?v=41"></script>
+<script src="config.js?v=42"></script>
+<script src="util.js?v=42"></script>
+<script src="stats.js?v=42"></script>
+<script src="scoring.js?v=42"></script>
+<script src="challenge.js?v=42"></script>
+<script src="history.js?v=42"></script>
+<script src="deezer.js?v=42"></script>
+<script src="spotify.js?v=42"></script>
+<script src="room.js?v=42"></script>
+<script src="cover.js?v=42"></script>
+<script src="feat.js?v=42"></script>
+<script src="app.js?v=42"></script>
 </body>
 </html>

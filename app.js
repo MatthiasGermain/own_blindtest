@@ -40,6 +40,7 @@ async function onBack() {
   switch (currentScreen()) {
     case 'screen-round': await quitGame(); break;
     case 'screen-cover': await Covers.back(); break;
+    case 'screen-feat': await Feats.back(); break;
     case 'screen-room': await Salle.back(); break;
     case 'screen-end': backToSetup(); break;
     case 'screen-setup': case 'screen-denied': goHome(); break;
@@ -1093,6 +1094,7 @@ async function main() {
   $('#btn-challenge-skip').onclick = dropChallenge;
   setupChoiceUi();
   Covers.wire();
+  Feats.wire();
   $('#opt-answers').value = store.get('answers', matchMedia('(pointer: coarse)').matches ? 'choice' : 'type');
   if (!$('#opt-answers').value) $('#opt-answers').value = 'type';
   $('#opt-answers').onchange = () => store.set('answers', $('#opt-answers').value);
@@ -1121,6 +1123,8 @@ async function main() {
   if (await Salle.boot()) return;
   // A Pochette surprise challenge, or the way back from a Spotify login started on its panel.
   if (Covers.boot()) return;
+  // A Feat sur feat challenge.
+  if (Feats.boot()) return;
   if (!store.get('token') && !store.get('history') && !store.get('deezerUser')) { goHome(); return; }
   enterSetup();
 }
